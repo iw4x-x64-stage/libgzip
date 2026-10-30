@@ -20,19 +20,19 @@
 
 namespace gzip
 {
-  // Compression level, from 0 to 9 (see deflate::compression_level for
+  // Compression level, from 0 to 9. This is libdeflate's level, which the
+  // deflate data is compressed at (see deflate::compression_level for
   // details).
   //
   using deflate::compression_level;
 
   // Incremental compressor into gzip data (RFC 1952).
   //
-  // The compressor writes the data as a single member with the specified
-  // header, which it verifies on construction. It takes the data in parts
-  // of any size and writes the compressed data into output buffers of any
-  // size. The compressed data depends only on the data, the level, and the
-  // header, so however the data is split into parts, the result is the
-  // same.
+  // The compressor writes a single member with the specified header, which
+  // it verifies on construction. It takes the data in parts of any size and
+  // writes the compressed data into output buffers of any size. The result
+  // only depends on the data, the level, and the header, so it is the same
+  // however the data is split into parts.
   //
   // For example:
   //
@@ -60,13 +60,16 @@ namespace gzip
   class LIBGZIP_SYMEXPORT compressor
   {
   public:
-    // The level must be in the range from 0 to 9. The extra flags of the
-    // header are set from the level, whatever the header says: maximum for
-    // level 9, fastest for levels 0 and 1, and none otherwise.
+    // The level must be in the range from 0 to 9. Set the extra flags of
+    // the header from the level, replacing whatever the header has: maximum
+    // for level 9, fastest for levels 0 and 1, and none for the rest. The
+    // flags describe how the data was compressed, so only we can tell.
     //
-    // Throw std::invalid_argument if the header is invalid: its file name
-    // or file comment contains a zero byte, its extra field is longer than
-    // the format allows, or one of its subfields has a reserved ID.
+    // Throw std::invalid_argument if the header cannot be written as it is,
+    // which is the case if its file name or file comment contains a zero
+    // byte (which would terminate it early), if its extra field is longer
+    // than its two-byte length allows, or if one of its subfields has a
+    // reserved ID.
     //
     explicit
     compressor (compression_level = compression_level::balanced,
@@ -81,9 +84,9 @@ namespace gzip
     // compressor finishes the compressed data once it has taken all of it.
     // Once end is true, it must stay so in the calls that follow.
     //
-    // Note that the deflate compressor holds on to the data that it may
-    // still find a repeated string in. So until end is true, the compressor
-    // may write nothing for a while.
+    // Note that the deflate compressor holds on to the data that later input
+    // may repeat. So until end is true, a call may take all of its input and
+    // write nothing.
     //
     progress
     next (std::string_view in, std::span<char> out, bool end);
@@ -100,7 +103,7 @@ namespace gzip
     reset () noexcept;
 
   private:
-    // Where we are in the compressed data.
+    // Which part of the member we are writing.
     //
     enum class state
     {
@@ -113,25 +116,26 @@ namespace gzip
     state state_;
     bool  ending_; // End of the data was given.
 
-    // The header and trailer as written, and how much of the one being
-    // written is.
+    // We serialize the header on construction and the trailer once the
+    // deflate data is finished, and then copy them into the output as it
+    // has room.
     //
     std::string head_;
     char        tail_[trailer_size];
-    std::size_t pos_;
+    std::size_t pos_;                // Bytes of head_ or tail_ written.
 
-    // Compressor of the deflate data, and the CRC-32 and size (modulo 2^32)
-    // of the data compressed with it.
+    // Deflate data of the member and what the trailer says about the data
+    // that it compresses.
     //
     deflate::compressor deflate_;
-    crc32               crc_;
-    std::uint32_t       size_;
+    crc32               crc_;  // CRC-32 of the data.
+    std::uint32_t       size_; // Size of the data modulo 2^32.
   };
 
-  // Compress the whole data at the level with the header and return the
-  // result. The level must be in the range from 0 to 9. Throw
-  // std::invalid_argument if the header is invalid (see compressor for
-  // details).
+  // Compress the whole data into a member with the header at the level and
+  // return the result. The level must be in the range from 0 to 9. Throw
+  // std::invalid_argument if the header cannot be written (see compressor
+  // for details).
   //
   LIBGZIP_SYMEXPORT std::string
   compress (std::string_view,

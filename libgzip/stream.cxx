@@ -58,11 +58,12 @@ namespace gzip
       return traits_type::eof ();
 
     // Decompress until we have some output or the data ends. Each round
-    // either uses some input or, having used it all, takes more, so we get
+    // either uses some input or, having used it all, reads more, so we get
     // somewhere.
     //
-    // Note that the output of a round comes from a single member (see
-    // decompressor::next() for details), which is what header() relies on.
+    // Note that we only keep the output of one round in the get area. The
+    // output of a round comes from a single member (see decompressor::next()
+    // for details), so header() describes all of the get area.
     //
     while (!d_->finished ())
     {
@@ -89,8 +90,8 @@ namespace gzip
   bool istreambuf::
   load ()
   {
-    // The gzip data ends the other stream, so we can take as much of it as
-    // fits.
+    // The gzip data ends the other stream, so there is nothing after it that
+    // we could read by mistake and we can take as much as fits.
     //
     in_ = static_cast<size_t> (
       is_->rdbuf ()->sgetn (ib_.get (), static_cast<streamsize> (buffer_size)));
@@ -128,8 +129,8 @@ namespace gzip
                                       std::ostream::failbit)) ==
                  (std::ostream::badbit | std::ostream::failbit));
 
-    // Construct the compressor first, since it verifies the header, so
-    // that the buffer stays closed if the header doesn't pass.
+    // Construct the compressor first, since it verifies the header. If the
+    // header doesn't pass, then the buffer stays closed.
     //
     c_.emplace (l, h);
 
@@ -141,7 +142,8 @@ namespace gzip
 
     os_ = &os;
 
-    // Keep a character of the put area for the one that overflow() gets.
+    // Keep the last character of the put area free for the one that
+    // overflow() gets, so that it can save them all in one go.
     //
     setp (ib_.get (), ib_.get () + buffer_size - 1);
   }
@@ -152,8 +154,8 @@ namespace gzip
     if (!is_open ())
       return;
 
-    // Whether or not finishing the data succeeds, the buffer ends up closed
-    // since there is no getting back to a consistent state.
+    // If finishing the member fails, then there is no getting back to a
+    // consistent state, so close the buffer either way.
     //
     try
     {
@@ -189,9 +191,9 @@ namespace gzip
   {
     string_view in (pbase (), static_cast<size_t> (pptr () - pbase ()));
 
-    // Compress until all of the input is taken and the compressor has
-    // nothing more to write (which we know when it doesn't fill the output)
-    // or, at the end, until the compressed data is finished.
+    // Compress until the compressor has taken all of the input and has
+    // nothing more to write, which we know when it no longer fills the
+    // output. At the end, go on until the member is finished.
     //
     for (;;)
     {

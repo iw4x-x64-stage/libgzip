@@ -11,9 +11,10 @@
 
 namespace gzip
 {
-  // Data that doesn't conform to the gzip format, with the description of
-  // the fault as the message. This includes the faults in the deflate data
-  // of a member. For example:
+  // Invalid gzip data, with the description of the fault as the message.
+  // The decompressor also reports the faults that libdeflate finds in the
+  // deflate data of a member with it, so that a caller only has one
+  // exception to handle. For example:
   //
   // throw invalid_data ("invalid compression method {}", m);
   //
@@ -30,7 +31,9 @@ namespace gzip
   };
 
   // Number of bytes that a step of the compressor or decompressor took from
-  // its input and wrote to its output.
+  // its input and wrote to its output. We reuse libdeflate's type, which
+  // lets the same code drive the compressors and decompressors of both
+  // libraries.
   //
   using deflate::progress;
 }

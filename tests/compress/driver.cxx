@@ -125,8 +125,8 @@ namespace
 //
 // --chunk <n>
 //
-//     compress with a compressor object instead, passing it n bytes of the
-//     data at a time with room for n bytes of output
+//     compress with a compressor object, passing it n bytes of the data at
+//     a time with room for n bytes of output
 //
 // --reset
 //
@@ -158,7 +158,8 @@ main (int argc, char* argv[])
 {
   assert (argc >= 2);
 
-  // Pass the data through as it is.
+  // Switch the standard streams to the binary mode, since on Windows the
+  // text mode would translate the line endings in the data.
   //
 #ifdef _WIN32
   _setmode (_fileno (stdin),  _O_BINARY);
@@ -213,7 +214,7 @@ main (int argc, char* argv[])
   {
     const string_view a (argv[i]);
 
-    // Return the option's value.
+    // Advance to the value of the current option and return it.
     //
     auto value = [argc, argv, &i] ()
     {

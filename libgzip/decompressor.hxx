@@ -23,28 +23,26 @@ namespace gzip
 {
   // Incremental decompressor of gzip data (RFC 1952).
   //
-  // The data is a series of one or more members, each of which holds
-  // deflate data between a header and a trailer, and the decompressed data
-  // is the decompressed data of all of the members, one after another.
+  // Gzip data is a series of one or more members, each holding deflate data
+  // between a header and a trailer, and it decompresses into the data of
+  // all its members, one after another.
   //
   // The decompressor takes the data in parts of any size, down to a byte at
   // a time, and writes the result into output buffers of any size, so the
   // caller decides how much memory either side takes. It accepts every data
   // set that the format defines and rejects everything else, throwing
-  // invalid_data on the first fault it finds. In particular, it rejects a
-  // member with an unknown compression method, a reserved flag bit set,
-  // extra flags other than those the deflate method defines, an extra field
-  // that doesn't consist of whole subfields, a subfield with a reserved ID,
-  // a header CRC16, data CRC-32, or data size that doesn't match, as well as
-  // anything after the last member. The only header value it takes as it is
-  // is the operating system (see operating_system for details). After an
-  // exception the decompressor can only be reset.
+  // invalid_data on the first fault it finds. We are strict here since a
+  // value that the format reserves or leaves undefined could mean anything,
+  // including a header that we would misread. So, for example, a reserved
+  // flag bit is a fault, and so is anything after the last member. The one
+  // exception is the operating system, whose list of values the format
+  // leaves open (see operating_system for details). After an exception the
+  // decompressor can only be reset.
   //
-  // The header of each member is available once it has been read (see
-  // header() for details). Since the format puts no limit on the size of
-  // the file name and file comment, the decompressor is given one at
-  // construction and rejects the members whose file name or file comment
-  // exceeds it, so that the memory it takes stays bounded.
+  // The decompressor keeps the header of the current member (see header()
+  // for details). The format puts no limit on the size of its file name and
+  // file comment, so to keep the memory bounded we limit them ourselves and
+  // reject a member that goes over (see the constructor for details).
   //
   // For example:
   //
@@ -69,13 +67,14 @@ namespace gzip
   class LIBGZIP_SYMEXPORT decompressor
   {
   public:
-    // Default size limit of the file name and of the file comment, which is
-    // the same as the format's limit of the extra field.
+    // Default limit of the file name and file comment size. We use the
+    // format's own limit of the extra field, which is plenty for any real
+    // name or comment.
     //
     static constexpr std::size_t default_max_string = max_extra;
 
-    // The file name and file comment of a member may each be up to
-    // max_string bytes, the terminating zero byte excluded.
+    // Limit the file name and the file comment of each member to max_string
+    // bytes, not counting the terminating zero byte.
     //
     explicit
     decompressor (std::size_t max_string = default_max_string);
@@ -89,10 +88,9 @@ namespace gzip
     // must therefore end in it. In this case throw invalid_data if the input
     // runs out first.
     //
-    // Note that since a call stops at the end of each member, the output of
-    // a call always comes from a single member, the one that header()
-    // returns the header of after the call. A call after the end of the data
-    // does nothing.
+    // Note that stopping at the end of each member means that the output of
+    // a call comes from a single member, whose header header() returns after
+    // the call. A call after the end of the data does nothing.
     //
     progress
     next (std::string_view in, std::span<char> out, bool end);
@@ -102,13 +100,15 @@ namespace gzip
     bool
     finished () const noexcept {return state_ == state::finished;}
 
-    // Return the header of the current member, which is the last member
-    // whose header has been read, or nullopt if there is none yet.
+    // Return the header of the current member, which is the last one whose
+    // header has been read, or nullopt if no header has been read yet.
     //
     const std::optional<gzip::header>&
     header () const noexcept {return header_;}
 
-    // Return the number of members whose header has been read.
+    // Return the number of members whose header has been read. A caller
+    // that needs the header of every member can watch it change between the
+    // calls to next().
     //
     std::size_t
     members () const noexcept {return members_;}
@@ -120,8 +120,8 @@ namespace gzip
     reset () noexcept;
 
   private:
-    // Where we are in the data. Note that the header fields are in the order
-    // in which they appear in the header.
+    // Where we are in the data. Note that the header states are in the
+    // order of the fields in the header, which enter() relies on.
     //
     enum class state
     {
@@ -139,29 +139,29 @@ namespace gzip
     bool
     invariant () const noexcept;
 
-    // Take the input into the field until it has n bytes. Return false if
-    // the input runs out first.
+    // Take bytes from the input into field_ until it has n of them. Return
+    // false if the input runs out first.
     //
     bool
     collect (std::size_t n);
 
-    // Take the input into the field up to the terminating zero byte, which
-    // is taken but not stored. Return false if the input runs out first.
-    // Throw invalid_data if the string exceeds the limit, calling it what in
-    // the description.
+    // Take bytes from the input into field_ up to the terminating zero byte,
+    // which is consumed but not stored. Return false if the input runs out
+    // first. Throw invalid_data if the string goes over the limit, with what
+    // naming the string in the description (for example, "file name").
     //
     bool
     collect_string (const char* what);
 
-    // Move to the first of the header fields, from the specified one on,
-    // that the flags say the member has. If there is none, then start the
-    // deflate data.
+    // Move to the first header field, starting from the specified one, that
+    // the member's flags say is present. If there is none, then the header
+    // is complete and we move to the deflate data.
     //
     void
     enter (state);
 
-    // Parse the subfields of the extra field, which is in the field, into
-    // the header being read.
+    // Parse the extra field in field_ into the subfields of the header being
+    // read.
     //
     void
     parse_extra ();
@@ -170,40 +170,40 @@ namespace gzip
     std::size_t max_string_;
     state       state_;
 
-    // Input and output of the next() call in progress.
+    // Input and output of the next() call in progress, with the positions
+    // up to which they have been used.
     //
     std::string_view in_;
     std::size_t      in_pos_;
     std::span<char>  out_;
     std::size_t      out_pos_;
 
-    // Header of the current member, the number of members whose header has
-    // been read, and the header being read.
+    // The header is read into pending_ and only becomes the current one
+    // once it is complete, so that header() never returns a partial header.
     //
     std::optional<gzip::header> header_;
     std::size_t                 members_;
     gzip::header                pending_;
 
-    // Flags of the member, the bytes of the header field being read, the
-    // length of the extra field, and the CRC-32 of the header up to the
-    // field being read.
+    // State of the header being read. A field is collected in field_ until
+    // it is complete, since it may arrive split across the next() calls.
     //
-    std::uint8_t flags_;
-    std::string  field_;
-    std::size_t  extra_length_;
-    crc32        header_crc_;
+    std::uint8_t flags_;        // FLG of the member.
+    std::string  field_;        // Bytes of the field being read.
+    std::size_t  extra_length_; // XLEN of the member.
+    crc32        header_crc_;   // CRC-32 of the header fields read so far.
 
-    // Decompressor of the deflate data, and the CRC-32 and size (modulo
-    // 2^32) of the data decompressed from it.
+    // Deflate data of the member and what we know about its decompressed
+    // data, for verifying against the trailer.
     //
     deflate::decompressor deflate_;
-    crc32                 crc_;
-    std::uint32_t         size_;
+    crc32                 crc_;  // CRC-32 of the decompressed data.
+    std::uint32_t         size_; // Size of the decompressed data modulo 2^32.
   };
 
-  // Decompress the whole data and return the result. Throw invalid_data if
-  // the data is invalid or incomplete. Use the default limit of the file
-  // name and file comment (see decompressor for details).
+  // Decompress the whole data and return the result, with the default
+  // limit of the file name and file comment (see decompressor for details).
+  // Throw invalid_data if the data is invalid or incomplete.
   //
   LIBGZIP_SYMEXPORT std::string
   decompress (std::string_view);

@@ -11,12 +11,12 @@ namespace gzip
 {
   namespace
   {
-    // Return the table of the CRC of each byte value, for the byte at a time
-    // calculation of Sarwate that RFC 1952 refers to (8).
+    // Return the CRC of each byte value, which lets us calculate the CRC a
+    // byte at a time. This is Sarwate's method, which RFC 1952 cites (8),
+    // and the table is the same as in the sample code of the RFC.
     //
-    // The CRC is calculated with the bits of each byte taken least
-    // significant first, so the table is of the reflected polynomial
-    // 0xedb88320.
+    // Note that the CRC takes the bits of each byte least significant first,
+    // which is why the polynomial is in its reflected form, 0xedb88320.
     //
     constexpr array<uint32_t, 256>
     make_table () noexcept
@@ -42,9 +42,9 @@ namespace gzip
   void crc32::
   append (string_view s) noexcept
   {
-    // The calculation works on the complement of the value (which is what
-    // makes leading zero bytes count), so complement it on the way in and on
-    // the way out.
+    // The CRC register starts as all ones and the value is its complement
+    // (without this, leading zero bytes would not change the value). Since we
+    // keep the value, we complement it back into the register first.
     //
     uint32_t c (value_ ^ 0xffffffff);
 

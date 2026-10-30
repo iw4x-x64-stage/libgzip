@@ -96,8 +96,8 @@ namespace
 
       assert (g.consumed <= in.size () && g.produced <= n);
 
-      // A call stops at the end of a member, so it reads at most one
-      // header.
+      // A call stops at the end of each member, so it reads at most one
+      // header, which we can therefore print right after the call.
       //
       assert (z.members () - m <= 1);
 
@@ -124,8 +124,8 @@ namespace
 //
 // --chunk <n>
 //
-//   Decompress with a decompressor object instead, passing it n bytes of
-//   the data at a time with room for n bytes of output.
+//   Decompress with a decompressor object, passing it n bytes of the data
+//   at a time with room for n bytes of output.
 //
 // --limit <n>
 //
@@ -135,9 +135,9 @@ namespace
 // --header
 //
 //   Decompress with a decompressor object and print the header of each
-//   member instead of the result, separating the members with a blank line.
-//   Each header is printed as the following lines, of which extra, name, and
-//   comment only if the member has that field:
+//   member, separating the members with a blank line, and leave out the
+//   result. A header is printed as the following lines, where the extra,
+//   name, and comment lines are there only if the member has the field:
 //
 //   text: <true|false>
 //   mtime: <seconds>
@@ -178,7 +178,8 @@ main (int argc, char* argv[])
 
   assert (!chunk || *chunk != 0);
 
-  // Pass the result through as it is.
+  // Switch stdout to the binary mode, since on Windows the text mode would
+  // translate the line endings in the result. The input is text.
   //
 #ifdef _WIN32
   _setmode (_fileno (stdout), _O_BINARY);

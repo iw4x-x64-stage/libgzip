@@ -9,12 +9,14 @@
 #include <cstdint> // uint8_t, uint32_t
 #include <optional>
 
-// The member header and its values, as RFC 1952 defines them. Section
-// numbers below refer to that document.
+// The header of a gzip member and the types of its values. The section
+// numbers in the comments below refer to RFC 1952.
 //
 namespace gzip
 {
-  // Extra flags, which say how the deflate data was compressed (2.3.1).
+  // Extra flags of the deflate compression method (2.3.1). The method
+  // defines two values, which say that the compressor used its slowest or
+  // its fastest algorithm, and 0 says neither.
   //
   enum class extra_flags: std::uint8_t
   {
@@ -23,19 +25,20 @@ namespace gzip
     fastest = 4  // Fastest algorithm.
   };
 
-  // Operating system (more precisely, the type of file system) on which the
-  // compression took place (2.3.1).
+  // Operating system on which the compression took place, which is really
+  // about the type of its file system and so its end-of-line convention
+  // (2.3.1).
   //
-  // The format lists these values as the ones currently defined, which
-  // leaves the list open, so the operating system may well be another
-  // value.
+  // The format calls the values below the currently defined ones, so we
+  // treat the list as open: the decompressor passes any value through as it
+  // is and the enumeration, with its uint8_t base, can hold all of them.
   //
   enum class operating_system: std::uint8_t
   {
     fat          = 0,  // FAT file system (MS-DOS, OS/2, NT/Win32).
     amiga        = 1,
     vms          = 2,  // VMS (or OpenVMS).
-    unix_system  = 3,  // Named so since GCC predefines unix as a macro.
+    unix_system  = 3,  // GCC predefines unix as a macro in GNU modes.
     vm_cms       = 4,
     atari_tos    = 5,
     hpfs         = 6,  // HPFS file system (OS/2, NT).
@@ -51,8 +54,10 @@ namespace gzip
 
   // Subfield of the extra field (2.3.1.1).
   //
-  // The subfield ID is typically two ASCII letters, and its second byte
-  // must not be zero, since the IDs with a zero second byte are reserved.
+  // The ID is normally two ASCII letters with some mnemonic value (the
+  // format mentions 'AP' for Apollo file type information). The IDs whose
+  // second byte is zero are reserved for future use, which is why the
+  // compressor refuses to write them and the decompressor rejects them.
   //
   struct subfield
   {
@@ -62,15 +67,17 @@ namespace gzip
 
   // Header of a member (2.3).
   //
-  // The file name and file comment are in ISO 8859-1 and can contain any
-  // character but the zero byte, which terminates them in the header. The
-  // file name is the name of the original file with any directory
-  // components removed (and, for a file system with case-insensitive names,
-  // in lower case), and the comment separates lines with a single line feed
-  // character.
+  // The file name and file comment are ISO 8859-1 strings that the header
+  // terminates with a zero byte, so they can contain any byte but zero. We
+  // don't convert or check them any further. In particular, it is up to the
+  // caller to strip the directory components from the file name (and to
+  // lower-case it for a file system with case-insensitive names) and to
+  // separate the lines of the comment with a single line feed, as the
+  // format expects.
   //
   // Note that the compressor sets the extra flags from the compression
-  // level and so ignores the flags of the header it is given.
+  // level, so the flags member only matters in the headers that the
+  // decompressor returns.
   //
   struct header
   {
@@ -79,13 +86,15 @@ namespace gzip
     extra_flags      flags = extra_flags::none;
     operating_system os    = operating_system::unknown;
 
-    // The optional fields, each present if it has a value.
+    // Optional fields, each present in the header if it has a value. Note
+    // that an empty value is a value: the format tells, say, an empty file
+    // name from no file name at all.
     //
     std::optional<std::vector<subfield>> extra;
     std::optional<std::string>           name;
     std::optional<std::string>           comment;
 
-    // Whether the header ends with the CRC16 of what precedes it.
+    // Whether the header ends with a CRC16 of the bytes that precede it.
     //
     bool crc16 = false;
   };

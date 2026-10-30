@@ -64,7 +64,8 @@ main (int argc, char* argv[])
 {
   assert (argc >= 2);
 
-  // Pass the data through as it is.
+  // Switch the standard streams to the binary mode, since on Windows the
+  // text mode would translate the line endings in the data.
   //
 #ifdef _WIN32
   _setmode (_fileno (stdin),  _O_BINARY);

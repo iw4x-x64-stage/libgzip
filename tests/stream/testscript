@@ -1,6 +1,9 @@
 # Copyright (c) the IW4x authors (see the AUTHORS file).
 # SPDX-License-Identifier: GPL-3.0-only WITH AdditionRef-IW4x-Exception-1.1
 
+# Text whose 1kb paragraph repeats in the larger files, and members to
+# decompress, whose file names tell them apart in the output of --names.
+#
 +touch zero
 +cat <<EOI >=1kb
 A gzip file is a series of members, each of which holds the deflate data of

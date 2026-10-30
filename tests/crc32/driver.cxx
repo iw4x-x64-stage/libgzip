@@ -31,7 +31,7 @@ using namespace gzip;
 //
 // --chunk <n>
 //
-//   Append the data n bytes at a time instead of in one go.
+//   Append the data n bytes at a time.
 //
 // --reset
 //
@@ -60,7 +60,8 @@ main (int argc, char* argv[])
 
   assert (!chunk || *chunk != 0);
 
-  // Read the data as it is.
+  // Switch stdin to the binary mode, since on Windows the text mode would
+  // translate the line endings in the data.
   //
 #ifdef _WIN32
   _setmode (_fileno (stdin), _O_BINARY);

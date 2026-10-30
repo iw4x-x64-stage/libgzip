@@ -1,8 +1,8 @@
 # Copyright (c) the IW4x authors (see the AUTHORS file).
 # SPDX-License-Identifier: GPL-3.0-only WITH AdditionRef-IW4x-Exception-1.1
 
-# The check values come from the zlib implementation of the same CRC
-# (Python's zlib.crc32()).
+# We take the expected values from another implementation of the same CRC,
+# zlib's, through Python's zlib.crc32().
 #
 +cat <<EOI >=text
 A gzip file is a series of members, each of which holds the deflate data of

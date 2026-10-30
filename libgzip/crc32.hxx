@@ -12,11 +12,10 @@ namespace gzip
 {
   // CRC-32 calculator.
   //
-  // This is the CRC of ISO 3309 and ITU-T V.42 that the gzip format uses to
-  // check the data of a member and, optionally, its header (RFC 1952 2.3.1).
-  // The data can be appended in parts of any size, so the value of the
-  // whole data can be obtained without having all of it at once. For
-  // example:
+  // This is the CRC of ISO 3309 and ITU-T V.42, which gzip uses for the data
+  // of a member and, if the member says so, for its header (RFC 1952
+  // 2.3.1). The data can be appended in parts of any size and the value is
+  // the same as for the whole data appended at once. For example:
   //
   // crc32 c;
   // c.append ("1234");
@@ -32,7 +31,7 @@ namespace gzip
     explicit
     crc32 (std::string_view s) {append (s);}
 
-    // Append the data.
+    // Append the data to what has been appended so far.
     //
     void
     append (std::string_view) noexcept;

@@ -14,8 +14,8 @@ namespace gzip
 {
   namespace
   {
-    // Write the value into the n bytes starting from p, least significant
-    // byte first (2.1).
+    // Store the value in the n bytes at p, least significant byte first, as
+    // the format stores all its multi-byte numbers (2.1).
     //
     void
     store_le (char* p, uint32_t v, size_t n) noexcept
@@ -26,7 +26,8 @@ namespace gzip
         p[i] = static_cast<char> (v & 0xff);
     }
 
-    // Append the value to the string as n bytes, least significant first.
+    // Append the value to the string as n bytes (see store_le() for
+    // details).
     //
     void
     append_le (string& s, uint32_t v, size_t n)
@@ -36,13 +37,14 @@ namespace gzip
       s.append (b, n);
     }
 
-    // Return the header of the member, as written, with the extra flags of
-    // the level. Throw invalid_argument if the header is invalid.
+    // Return the header as written to the member, with the extra flags of
+    // the level. Throw invalid_argument if the header cannot be written.
     //
     string
     serialize (const header& h, compression_level l)
     {
-      // Verify the fields that the format puts requirements on.
+      // Verify the fields that the format puts requirements on, adding up
+      // the length of the extra field while at it.
       //
       if (h.name && h.name->find ('\0') != string::npos)
         throw invalid_argument ("file name contains zero byte");
@@ -59,8 +61,8 @@ namespace gzip
           if (f.id[1] == '\0')
             throw invalid_argument ("extra subfield with reserved ID");
 
-          // Once the field is too long, there is no point in adding more,
-          // which also keeps the sum from overflowing.
+          // Check the length after each subfield, which stops the sum long
+          // before it could overflow.
           //
           xlen += subfield_header_size + f.data.size ();
 
@@ -69,9 +71,10 @@ namespace gzip
         }
       }
 
-      // Figure out the extra flags. The deflate method only defines the
-      // ones for the fastest and the slowest algorithm (2.3.1), which we
-      // take to be levels 0 and 1, and level 9, respectively.
+      // Figure out the extra flags. The deflate method defines one value for
+      // the slowest algorithm and one for the fastest (2.3.1). We take level
+      // 9 for the slowest and levels 0 and 1 for the fastest, the same as
+      // zlib does, and say nothing for the levels in between.
       //
       extra_flags x (extra_flags::none);
 
@@ -80,7 +83,7 @@ namespace gzip
       else if (l <= compression_level::fastest)
         x = extra_flags::fastest;
 
-      // Write the fixed part.
+      // Write the fixed part, with a flag for each field that follows.
       //
       uint8_t flg (0);
 
@@ -125,8 +128,8 @@ namespace gzip
         r += '\0';
       }
 
-      // The CRC16 is the lower half of the CRC-32 of the header bytes
-      // before it (2.3.1).
+      // Finish with the CRC16, which is the lower half of the CRC-32 of the
+      // header bytes that precede it (2.3.1).
       //
       if (h.crc16)
         append_le (r, crc32 (r).value () & 0xffff, 2);
@@ -165,8 +168,8 @@ namespace gzip
     size_t ip (0);
     size_t op (0);
 
-    // Copy as much of the bytes from pos_ on as fits into the output.
-    // Return true if all of them are copied.
+    // Copy what is left of the bytes, from pos_ on, into the output as far
+    // as it has room. Return true if everything is copied.
     //
     auto copy = [&out, &op, this] (string_view s)
     {
@@ -179,8 +182,8 @@ namespace gzip
       return pos_ == s.size ();
     };
 
-    // Write the header, the deflate data, and the trailer, in turn, until
-    // the output fills up or, in the deflate data, the input runs out.
+    // Write the parts of the member in order until the output fills up or,
+    // in the deflate data, the input runs out.
     //
     for (bool stop (false); !stop && state_ != state::finished; )
     {
@@ -209,8 +212,9 @@ namespace gzip
           ip += p.consumed;
           op += p.produced;
 
-          // Unless it has finished, the deflate compressor has done all it
-          // can with this input and output.
+          // If the deflate compressor hasn't finished, then it has done all
+          // it can with this input and output. Otherwise, the trailer follows,
+          // which we can only write now that we have seen all the data.
           //
           if (!deflate_.finished ())
           {
@@ -248,9 +252,9 @@ namespace gzip
   {
     compressor c (l, h);
 
-    // Compress into the result, growing it as it fills up. Since the
-    // compressor is told that the input is all there is, it finishes once
-    // it has written everything.
+    // Compress into the result, growing it as it fills up. Since we tell
+    // the compressor that the input is all there is, it finishes once it
+    // has written everything.
     //
     const size_t initial (4096);
 

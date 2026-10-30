@@ -21,15 +21,18 @@ namespace gzip
   // Stream buffer that decompresses the gzip data it reads from another
   // stream.
   //
-  // The gzip data must end the other stream, which is verified at the end
-  // of the stream. Note that the buffer reads the other stream's buffer
-  // directly, so the other stream's state stays as it is.
+  // Since gzip data is a series of members, only the end of the other
+  // stream tells us that there are no more of them. So the gzip data must
+  // end the other stream, and anything after its last member is a fault.
+  //
+  // Note that the buffer reads the other stream's buffer directly, so the
+  // other stream's state stays as it is.
   //
   class LIBGZIP_SYMEXPORT istreambuf: public std::streambuf
   {
   public:
-    // Start decompressing from the stream, with the limit of the file name
-    // and file comment (see decompressor for details).
+    // Start decompressing from the stream, limiting the file name and file
+    // comment to max_string bytes (see decompressor for details).
     //
     void
     open (std::istream&,
@@ -38,14 +41,14 @@ namespace gzip
     bool
     is_open () const noexcept {return is_ != nullptr;}
 
-    // Stop decompressing. Nothing more can be read until the buffer is
+    // Stop decompressing. Reading then gets nothing until the buffer is
     // opened again.
     //
     void
     close () noexcept;
 
-    // Return the header of the member that the characters being read come
-    // from, or nullopt if nothing has been read yet. The buffer must be
+    // Return the header of the member that the characters in the get area
+    // come from, or nullopt if nothing has been read yet. The buffer must be
     // open.
     //
     const std::optional<gzip::header>&
@@ -59,8 +62,8 @@ namespace gzip
     underflow () override;
 
   private:
-    // Take what the other stream's buffer has to give into the input
-    // buffer. Return false if the other stream has ended.
+    // Read the next part of the other stream into the input buffer. Return
+    // false if the other stream has ended.
     //
     bool
     load ();
@@ -69,7 +72,7 @@ namespace gzip
     static constexpr std::size_t buffer_size = 16384;
 
     std::istream*               is_ = nullptr;
-    bool                        eof_; // Other stream has ended.
+    bool                        eof_; // Other stream ended.
     std::optional<decompressor> d_;
     std::unique_ptr<char[]>     ib_;  // Input (compressed data).
     std::size_t                 in_;  // Input size.
@@ -93,8 +96,9 @@ namespace gzip
   //   ... // Invalid gzip data, see e.what () for the description.
   // }
   //
-  // The badbit exception must be enabled, since that is how the errors of
-  // the decompression and of the other stream come through.
+  // The badbit exception must be enabled, since the faults in the data and
+  // the errors of the other stream's buffer come through as exceptions that
+  // the stream only rethrows with badbit enabled.
   //
   class LIBGZIP_SYMEXPORT istream: public std::istream
   {
@@ -131,22 +135,24 @@ namespace gzip
     istreambuf buf_;
   };
 
-  // Stream buffer that compresses what is written to it into gzip data that
-  // it writes to another stream, as a single member with the specified
-  // header.
+  // Stream buffer that compresses what is written to it into a single gzip
+  // member with the specified header, which it writes to another stream.
   //
-  // Note that syncing the buffer does nothing, since the deflate compressor
-  // only writes what it has compressed in whole blocks.
+  // Note that syncing the buffer does nothing. The deflate compressor only
+  // writes a block once it is complete, and we don't want a flush to cut
+  // the data into needlessly small blocks.
   //
   class LIBGZIP_SYMEXPORT ostreambuf: public std::streambuf
   {
   public:
     // Start compressing into the stream at the level, which must be in the
-    // range from 0 to 9, with the header. The buffer must not be open, since
-    // that would leave the compressed data it is writing incomplete, and the
-    // stream must have the badbit and failbit exceptions enabled. Throw
-    // std::invalid_argument if the header is invalid (see compressor for
-    // details).
+    // range from 0 to 9, with the header. Throw std::invalid_argument if the
+    // header cannot be written (see compressor for details).
+    //
+    // The buffer must not be open, since we would otherwise abandon the
+    // member that it is writing. And the stream must have the badbit and
+    // failbit exceptions enabled, since that is how we learn that a write
+    // failed.
     //
     void
     open (std::ostream&, compression_level, const gzip::header&);
@@ -154,8 +160,9 @@ namespace gzip
     bool
     is_open () const noexcept {return os_ != nullptr;}
 
-    // Compress the rest of what was written and write the end of the
-    // compressed data to the other stream.
+    // Compress the rest of what was written and write the end of the member
+    // to the other stream. Close the buffer even if this fails, since the
+    // member cannot be finished then.
     //
     void
     close ();
@@ -165,8 +172,8 @@ namespace gzip
     overflow (int_type) override;
 
   private:
-    // Compress what is in the put area into the other stream, finishing the
-    // compressed data if end is true.
+    // Compress what is in the put area into the other stream and, if end is
+    // true, finish the member.
     //
     void
     save (bool end);
@@ -195,9 +202,10 @@ namespace gzip
   // os.close ();
   // ofs.close ();
   //
-  // Note that close() must be called explicitly, since the compressed data
-  // is incomplete until then: the stream must not be open when it is
-  // destroyed unless it is not good or an exception is being thrown.
+  // Note that close() must be called explicitly, since the member is only
+  // complete once it has been. So the stream must not be open when it is
+  // destroyed, unless it is no longer good or an exception is in flight, in
+  // which case the data is lost anyway.
   //
   class LIBGZIP_SYMEXPORT ostream: public std::ostream
   {
@@ -226,8 +234,7 @@ namespace gzip
     bool
     is_open () const noexcept {return buf_.is_open ();}
 
-    // Write the end of the compressed data (see ostreambuf::close() for
-    // details).
+    // Write the end of the member (see ostreambuf::close() for details).
     //
     void
     close () {buf_.close ();}

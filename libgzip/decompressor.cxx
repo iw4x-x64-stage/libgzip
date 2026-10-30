@@ -14,8 +14,8 @@ namespace gzip
 {
   namespace
   {
-    // Return the number that the n bytes starting from p hold, least
-    // significant byte first (2.1).
+    // Return the number stored in the n bytes at p. The format stores all
+    // its multi-byte numbers least significant byte first (2.1).
     //
     uint32_t
     load_le (const char* p, size_t n) noexcept
@@ -74,11 +74,11 @@ namespace gzip
     // Go through the data until the input runs out, the output fills up, a
     // member ends, or the data ends.
     //
-    // Each step of the header takes the input into the field until the
-    // field is complete, and only then changes the state. So if the input
-    // runs out in the middle of a field, then the bytes that the field has
-    // so far stay where they are and the step carries on with them on the
-    // next call.
+    // The input may end anywhere, including in the middle of a header field.
+    // So each header step first collects its whole field in field_ and only
+    // then interprets it and changes the state. If the input runs out first,
+    // then what was collected stays in field_ and the same step picks up
+    // from there on the next call.
     //
     bool starved (false);
     bool full (false);
@@ -90,7 +90,8 @@ namespace gzip
       {
         case state::fixed_header:
         {
-          // See if the data ends here, which it may only do after a member.
+          // See if this is the end of the data. Since the data is at least
+          // one member, it may only end here after a member.
           //
           if (field_.empty () && in_pos_ == in_.size () && end)
           {
@@ -101,8 +102,10 @@ namespace gzip
             break;
           }
 
-          // Verify each byte as soon as it arrives, so that data in another
-          // format is reported as such however soon it ends.
+          // Verify each byte as soon as we have it. This way data in another
+          // format is rejected at its first byte, even if it ends before the
+          // fixed part of the header would (in which case we would otherwise
+          // only see incomplete gzip data).
           //
           while (field_.size () != fixed_header_size)
           {
@@ -146,7 +149,8 @@ namespace gzip
               }
               case 8:
               {
-                // These are the values that the deflate method defines.
+                // Besides 0, these are the only values that the deflate method
+                // defines (2.3.1).
                 //
                 const extra_flags f (static_cast<extra_flags> (b));
 
@@ -163,6 +167,8 @@ namespace gzip
           if (starved)
             break;
 
+          // Start the header from scratch, since it is a new member.
+          //
           flags_ = static_cast<uint8_t> (field_[3]);
 
           pending_       = gzip::header ();
@@ -188,6 +194,9 @@ namespace gzip
 
           header_crc_.append (field_);
 
+          // The extra field is present even if it is empty, which is a
+          // series of no subfields.
+          //
           extra_length_ = load_le (field_.data (), 2);
           pending_.extra.emplace ();
 
@@ -226,7 +235,9 @@ namespace gzip
             break;
           }
 
-          // The terminating zero byte is part of the header as well.
+          // The file name and file comment differ only in where they go and
+          // what comes after them. Note that the terminating zero byte is part
+          // of the header and so of its CRC.
           //
           header_crc_.append (field_);
           header_crc_.append (string_view ("", 1));
@@ -245,7 +256,7 @@ namespace gzip
           }
 
           // The CRC16 is the lower half of the CRC-32 of the header bytes
-          // before it (2.3.1).
+          // that precede it (2.3.1), which header_crc_ has by now.
           //
           const uint32_t c (load_le (field_.data (), 2));
           const uint32_t e (header_crc_.value () & 0xffff);
@@ -261,10 +272,11 @@ namespace gzip
         }
         case state::data:
         {
-          // The deflate decompressor takes no input past the end of the
-          // deflate data, which leaves the trailer to us. If end is true and
-          // the input runs out before the deflate data ends, then it throws,
-          // and we pass that on as a fault of the gzip data.
+          // The deflate decompressor never takes input past the end of the
+          // deflate data, so the trailer is left in the input for us. If end
+          // is true, we pass it on, since the deflate data then has to end in
+          // this input as well. Whatever fault the deflate decompressor finds,
+          // we report it as a fault of the gzip data.
           //
           progress p;
 
@@ -292,8 +304,9 @@ namespace gzip
             break;
           }
 
-          // Otherwise, the deflate decompressor stopped because the input
-          // ran out or the output filled up.
+          // Otherwise, the deflate decompressor stopped because one of the
+          // buffers ran out. Note that if both did, we treat it as full output,
+          // since the next call will have more room and take it from there.
           //
           if (out_pos_ == out_.size ())
             full = true;
@@ -310,6 +323,8 @@ namespace gzip
             break;
           }
 
+          // Verify the trailer against what we have decompressed.
+          //
           const uint32_t c (load_le (field_.data (), 4));
           const uint32_t n (load_le (field_.data () + 4, 4));
 
@@ -323,8 +338,9 @@ namespace gzip
             throw invalid_data (
               "invalid size {} for data of size {} modulo 2^32", n, size_);
 
-          // The member ends here and so does this call. If this is the end
-          // of the last part of the input, then it is also the end of the
+          // The member ends here and so does this call, which keeps the
+          // output of a call to a single member (see next() for details). If
+          // the last part of the input ends here as well, then so does the
           // data.
           //
           field_.clear ();
@@ -340,8 +356,9 @@ namespace gzip
       }
     }
 
-    // Note that the deflate decompressor has already thrown if the input ran
-    // out in the deflate data.
+    // If we ran out of the last part of the input, then the data is
+    // incomplete. Note that the deflate decompressor has already thrown if
+    // that happened in the deflate data.
     //
     if (starved && end)
     {
@@ -364,8 +381,8 @@ namespace gzip
   bool decompressor::
   invariant () const noexcept
   {
-    // There is a header once one has been read, which the deflate data, the
-    // trailer, and the end of the data all come after.
+    // We have a header if and only if we have read one, and everything from
+    // the deflate data on comes after a header.
     //
     return header_.has_value () == (members_ != 0) &&
            (state_ < state::data || members_ != 0);
@@ -413,8 +430,8 @@ namespace gzip
                  s == state::header_crc   ||
                  s == state::data);
 
-    // The optional header fields in the order of the header, each with the
-    // flag that says the member has it.
+    // The optional header fields, in the order of the header, with the flag
+    // that says whether the member has each of them.
     //
     struct optional_field
     {
@@ -441,8 +458,8 @@ namespace gzip
       }
     }
 
-    // The header is complete, so it becomes the current member's header and
-    // the deflate data starts.
+    // The header is complete. Make it the current one and get ready for the
+    // deflate data that follows.
     //
     header_ = move (pending_);
     ++members_;
@@ -457,9 +474,9 @@ namespace gzip
   void decompressor::
   parse_extra ()
   {
-    // The extra field is a series of subfields, each a two-byte ID and a
-    // two-byte length followed by that many bytes of data, which together
-    // must fill the field (2.3.1.1).
+    // The extra field is a series of subfields, each with a two-byte ID and
+    // a two-byte length followed by that many bytes of data (2.3.1.1). So the
+    // field must end where a subfield ends.
     //
     vector<subfield>& r (*pending_.extra);
 
@@ -494,8 +511,8 @@ namespace gzip
   {
     decompressor d;
 
-    // Decompress into the result, growing it as it fills up. Since the
-    // decompressor is told that the input is all there is, it either gets
+    // Decompress into the result, growing it as it fills up. Since we tell
+    // the decompressor that the input is all there is, each call either gets
     // somewhere or throws.
     //
     const size_t initial (4096);
@@ -515,7 +532,8 @@ namespace gzip
       n += p.produced;
     }
 
-    // The data only ends when the input does.
+    // The decompressor only finishes at the end of the input, so there is
+    // nothing left over to complain about.
     //
     LIBGZIP_ASSERT (in.empty ());
 
