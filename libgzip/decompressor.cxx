@@ -458,8 +458,8 @@ namespace gzip
   parse_extra ()
   {
     // The extra field is a series of subfields, each a two-byte ID and a
-    // two-byte length followed by that many bytes of data, which must take
-    // up the field exactly (2.3.1.1).
+    // two-byte length followed by that many bytes of data, which together
+    // must fill the field (2.3.1.1).
     //
     vector<subfield>& r (*pending_.extra);
 

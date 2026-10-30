@@ -10,8 +10,8 @@
 # ''       0300                     00000000 00000000
 #
 # That is, a final stored block or, for the empty data, a final block with
-# the fixed codes that holds just the end of the block. The fixed part of the
-# header with the default values (no flags, no time stamp, the unknown
+# the fixed codes that holds nothing but the end of the block. The fixed part
+# of the header with the default values (no flags, no time stamp, the unknown
 # operating system) is:
 #
 # 1f8b 08 00 00000000 00 ff
@@ -439,7 +439,7 @@
 :
 {{
   : name
-  : File name of exactly the limit
+  : File name as long as the limit
   :
   $* --limit 5 <<EOI >:'hello'
   1f8b 08 08 00000000 00 ff 612e74787400
