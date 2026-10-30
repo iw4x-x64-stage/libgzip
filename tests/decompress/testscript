@@ -1,0 +1,510 @@
+# Copyright (c) the IW4x authors (see the AUTHORS file).
+# SPDX-License-Identifier: GPL-3.0-only WITH AdditionRef-IW4x-Exception-1.1
+
+# The data is written in the driver's hex form (see the driver for details).
+# Unless a test is about the deflate data, the members hold one of these,
+# with the CRC-32 and size that follow them in the trailer:
+#
+# 'hello'  01 0500 faff 68656c6c6f  86a61036 05000000
+# 'world'  01 0500 faff 776f726c64  4311773a 05000000
+# ''       0300                     00000000 00000000
+#
+# That is, a final stored block or, for the empty data, a final block with
+# the fixed codes that holds just the end of the block. The fixed part of the
+# header with the default values (no flags, no time stamp, the unknown
+# operating system) is:
+#
+# 1f8b 08 00 00000000 00 ff
+
+: member
+: Test members with the fixed part of the header only
+:
+{{
+  : text
+  :
+  $* <<EOI >:'hello'
+  1f8b 08 00 00000000 00 ff
+  01 0500 faff 68656c6c6f
+  86a61036 05000000
+  EOI
+
+  : empty
+  :
+  $* <<EOI >:''
+  1f8b 08 00 00000000 00 ff
+  0300
+  00000000 00000000
+  EOI
+
+  : gzip
+  : Member that GNU gzip 1.13 wrote with 'gzip -9', with the file name
+  : and modification time of the original file
+  :
+  $* <<EOI >'hello hello hello hello'
+  1f8b 08 08 f2fee36a 02 03 68682e74787400
+  cb48cdc9c957c84027b900
+  0088590b 18000000
+  EOI
+}}
+
+: members
+: Test data of several members
+:
+{{
+  : two
+  :
+  $* <<EOI >:'helloworld'
+  1f8b 08 00 00000000 00 ff 01 0500 faff 68656c6c6f 86a61036 05000000
+  1f8b 08 00 00000000 00 ff 01 0500 faff 776f726c64 4311773a 05000000
+  EOI
+
+  : empty
+  : Data with an empty member between two others
+  :
+  $* <<EOI >:'helloworld'
+  1f8b 08 00 00000000 00 ff 01 0500 faff 68656c6c6f 86a61036 05000000
+  1f8b 08 00 00000000 00 ff 0300 00000000 00000000
+  1f8b 08 00 00000000 00 ff 01 0500 faff 776f726c64 4311773a 05000000
+  EOI
+
+  : headers
+  : Print the header of each member
+  :
+  $* --header <<EOI >>EOO
+  1f8b 08 08 00000000 00 ff 612e74787400
+  01 0500 faff 68656c6c6f 86a61036 05000000
+  1f8b 08 08 00000000 00 ff 622e74787400
+  01 0500 faff 776f726c64 4311773a 05000000
+  EOI
+  text: false
+  mtime: 0
+  flags: 0
+  os: 255
+  name: 'a.txt'
+  crc16: false
+
+  text: false
+  mtime: 0
+  flags: 0
+  os: 255
+  name: 'b.txt'
+  crc16: false
+  EOO
+}}
+
+: header
+: Test the values and optional fields of the header
+:
+{{
+  : default
+  :
+  $* --header <<EOI >>EOO
+  1f8b 08 00 00000000 00 ff
+  0300 00000000 00000000
+  EOI
+  text: false
+  mtime: 0
+  flags: 0
+  os: 255
+  crc16: false
+  EOO
+
+  : values
+  : Text flag, modification time, extra flags, and operating system
+  :
+  $* --header <<EOI >>EOO
+  1f8b 08 01 00f15365 04 03
+  0300 00000000 00000000
+  EOI
+  text: true
+  mtime: 1700000000
+  flags: 4
+  os: 3
+  crc16: false
+  EOO
+
+  : os
+  : Operating system that the format doesn't list
+  :
+  $* --header <<EOI >>EOO
+  1f8b 08 00 00000000 00 13
+  0300 00000000 00000000
+  EOI
+  text: false
+  mtime: 0
+  flags: 0
+  os: 19
+  crc16: false
+  EOO
+
+  : extra
+  :
+  $* --header <<EOI >>EOO
+  1f8b 08 04 00000000 00 ff
+  0a00 4150 0200 0102 7879 0000 # Subfields 'AP' and 'xy'.
+  0300 00000000 00000000
+  EOI
+  text: false
+  mtime: 0
+  flags: 0
+  os: 255
+  extra: 4150:0102 7879:
+  crc16: false
+  EOO
+
+  : extra-empty
+  : Extra field without subfields
+  :
+  $* --header <<EOI >>EOO
+  1f8b 08 04 00000000 00 ff
+  0000
+  0300 00000000 00000000
+  EOI
+  text: false
+  mtime: 0
+  flags: 0
+  os: 255
+  extra:
+  crc16: false
+  EOO
+
+  : name
+  :
+  $* --header <<EOI >>EOO
+  1f8b 08 08 00000000 00 ff
+  68656c6c6f2e74787400
+  0300 00000000 00000000
+  EOI
+  text: false
+  mtime: 0
+  flags: 0
+  os: 255
+  name: 'hello.txt'
+  crc16: false
+  EOO
+
+  : name-empty
+  : File name with nothing but the terminating zero byte
+  :
+  $* --header <<EOI >>EOO
+  1f8b 08 08 00000000 00 ff
+  00
+  0300 00000000 00000000
+  EOI
+  text: false
+  mtime: 0
+  flags: 0
+  os: 255
+  name: ''
+  crc16: false
+  EOO
+
+  : comment
+  : File comment of two lines
+  :
+  $* --header <<EOI >>EOO
+  1f8b 08 10 00000000 00 ff
+  6c696e65310a6c696e653200
+  0300 00000000 00000000
+  EOI
+  text: false
+  mtime: 0
+  flags: 0
+  os: 255
+  comment: 'line1
+  line2'
+  crc16: false
+  EOO
+
+  : crc16
+  :
+  $* --header <<EOI >>EOO
+  1f8b 08 02 00000000 00 ff
+  90c9
+  0300 00000000 00000000
+  EOI
+  text: false
+  mtime: 0
+  flags: 0
+  os: 255
+  crc16: true
+  EOO
+
+  : all
+  : All of the optional fields, in the order of the header
+  :
+  $* --header <<EOI >>EOO
+  1f8b 08 1e 00000000 00 ff
+  0600 4150 0200 0102
+  68656c6c6f2e74787400
+  6772656574696e6700
+  51e4
+  01 0500 faff 68656c6c6f 86a61036 05000000
+  EOI
+  text: false
+  mtime: 0
+  flags: 0
+  os: 255
+  extra: 4150:0102
+  name: 'hello.txt'
+  comment: 'greeting'
+  crc16: true
+  EOO
+}}
+
+: invalid
+: Test members that the format doesn't define
+:
+{{
+  : id1
+  :
+  $* <'1e8b 08 00 00000000 00 ff' 2>>EOE != 0
+  error: expected identification byte 0x1f instead of 0x1e
+  EOE
+
+  : id2
+  :
+  $* <'1f8c 08 00 00000000 00 ff' 2>>EOE != 0
+  error: expected identification byte 0x8b instead of 0x8c
+  EOE
+
+  : id-early
+  : Identification byte that is reported before the data ends
+  :
+  $* <'50' 2>>EOE != 0
+  error: expected identification byte 0x1f instead of 0x50
+  EOE
+
+  : method-reserved
+  :
+  $* <'1f8b 07 00 00000000 00 ff' 2>>EOE != 0
+  error: invalid compression method 7
+  EOE
+
+  : method-unknown
+  :
+  $* <'1f8b 09 00 00000000 00 ff' 2>>EOE != 0
+  error: invalid compression method 9
+  EOE
+
+  : flags
+  : Flags with a reserved bit set
+  :
+  {{
+    : bit-5
+    :
+    $* <'1f8b 08 20 00000000 00 ff' 2>>EOE != 0
+    error: invalid flags 0x20 with reserved bits set
+    EOE
+
+    : bit-7
+    :
+    $* <'1f8b 08 88 00000000 00 ff' 2>>EOE != 0
+    error: invalid flags 0x88 with reserved bits set
+    EOE
+  }}
+
+  : extra-flags
+  : Extra flags that the deflate method doesn't define
+  :
+  {{
+    : 1
+    :
+    $* <'1f8b 08 00 00000000 01 ff' 2>>EOE != 0
+    error: invalid extra flags 1
+    EOE
+
+    : 6
+    :
+    $* <'1f8b 08 00 00000000 06 ff' 2>>EOE != 0
+    error: invalid extra flags 6
+    EOE
+  }}
+
+  : subfield-header
+  : Extra field that ends in the middle of a subfield header
+  :
+  $* <'1f8b 08 04 00000000 00 ff 0700 4150 0000 7879 00' 2>>EOE != 0
+  error: incomplete extra subfield header
+  EOE
+
+  : subfield-length
+  : Subfield whose data runs past the end of the extra field
+  :
+  $* <'1f8b 08 04 00000000 00 ff 0600 4150 0300 0102' 2>>EOE != 0
+  error: extra subfield length 3 exceeds extra field
+  EOE
+
+  : subfield-id
+  : Subfield with a reserved ID
+  :
+  $* <'1f8b 08 04 00000000 00 ff 0400 4100 0000' 2>>EOE != 0
+  error: reserved extra subfield ID 0x41 0x00
+  EOE
+
+  : crc16
+  :
+  $* <'1f8b 08 02 00000000 00 ff 91c9' 2>>EOE != 0
+  error: invalid header CRC16 0xc991 for header with CRC16 0xc990
+  EOE
+
+  : crc32
+  :
+  $* <<EOI 2>>EOE != 0
+  1f8b 08 00 00000000 00 ff
+  01 0500 faff 68656c6c6f
+  86a61037 05000000
+  EOI
+  error: invalid CRC-32 0x3710a686 for data with CRC-32 0x3610a686
+  EOE
+
+  : size
+  :
+  $* <<EOI 2>>EOE != 0
+  1f8b 08 00 00000000 00 ff
+  01 0500 faff 68656c6c6f
+  86a61036 06000000
+  EOI
+  error: invalid size 6 for data of size 5 modulo 2^32
+  EOE
+
+  : deflate
+  : Deflate data with a block of type 3
+  :
+  $* <'1f8b 08 00 00000000 00 ff 07' 2>>EOE != 0
+  error: invalid block type 3
+  EOE
+
+  : junk
+  : Data followed by something other than a member
+  :
+  $* <<EOI 2>>EOE != 0
+  1f8b 08 00 00000000 00 ff 0300 00000000 00000000
+  00
+  EOI
+  error: expected identification byte 0x1f instead of 0x00
+  EOE
+
+  : empty
+  : Data without members
+  :
+  $* <'' 2>>EOE != 0
+  error: empty gzip data
+  EOE
+}}
+
+: incomplete
+: Test data that ends before its last member does
+:
+{{
+  : fixed
+  : Data that ends in the fixed part of the header
+  :
+  $* <'1f8b 08' 2>>EOE != 0
+  error: incomplete member header
+  EOE
+
+  : name
+  : File name without the terminating zero byte
+  :
+  $* <'1f8b 08 08 00000000 00 ff 68656c6c6f' 2>>EOE != 0
+  error: incomplete member header
+  EOE
+
+  : data
+  :
+  $* <'1f8b 08 00 00000000 00 ff 01 0500 faff 6865' 2>>EOE != 0
+  error: incomplete deflate data
+  EOE
+
+  : trailer
+  :
+  $* <'1f8b 08 00 00000000 00 ff 01 0500 faff 68656c6c6f 86a6' 2>>EOE != 0
+  error: incomplete member trailer
+  EOE
+
+  : member
+  : Data that ends in the header of a second member
+  :
+  $* <<EOI 2>>EOE != 0
+  1f8b 08 00 00000000 00 ff 0300 00000000 00000000
+  1f
+  EOI
+  error: incomplete member header
+  EOE
+}}
+
+: limit
+: Test the limit of the file name and file comment
+:
+{{
+  : name
+  : File name of exactly the limit
+  :
+  $* --limit 5 <<EOI >:'hello'
+  1f8b 08 08 00000000 00 ff 612e74787400
+  01 0500 faff 68656c6c6f 86a61036 05000000
+  EOI
+
+  : name-long
+  : File name longer than the limit
+  :
+  $* --limit 4 <'1f8b 08 08 00000000 00 ff 612e74787400' 2>>EOE != 0
+  error: file name longer than 4 bytes
+  EOE
+
+  : comment-long
+  : File comment longer than the limit
+  :
+  $* --limit 4 <'1f8b 08 10 00000000 00 ff 612e74787400' 2>>EOE != 0
+  error: file comment longer than 4 bytes
+  EOE
+
+  : unterminated
+  : File name longer than the limit, which is reported before the data ends
+  :
+  $* --limit 2 --chunk 1 <'1f8b 08 08 00000000 00 ff 612e7478' 2>>EOE != 0
+  error: file name longer than 2 bytes
+  EOE
+}}
+
+: chunk
+: Test decompressing in parts, a byte at a time
+:
+{{
+  : data
+  :
+  $* --chunk 1 <<EOI >:'helloworld'
+  1f8b 08 00 00000000 00 ff 01 0500 faff 68656c6c6f 86a61036 05000000
+  1f8b 08 00 00000000 00 ff 0300 00000000 00000000
+  1f8b 08 00 00000000 00 ff 01 0500 faff 776f726c64 4311773a 05000000
+  EOI
+
+  : gzip
+  :
+  $* --chunk 1 <<EOI >'hello hello hello hello'
+  1f8b 08 08 f2fee36a 02 03 68682e74787400
+  cb48cdc9c957c84027b900
+  0088590b 18000000
+  EOI
+
+  : header
+  :
+  $* --chunk 1 --header <<EOI >>EOO
+  1f8b 08 1e 00000000 00 ff
+  0600 4150 0200 0102
+  68656c6c6f2e74787400
+  6772656574696e6700
+  51e4
+  01 0500 faff 68656c6c6f 86a61036 05000000
+  EOI
+  text: false
+  mtime: 0
+  flags: 0
+  os: 255
+  extra: 4150:0102
+  name: 'hello.txt'
+  comment: 'greeting'
+  crc16: true
+  EOO
+}}

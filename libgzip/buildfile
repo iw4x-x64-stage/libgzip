@@ -3,7 +3,11 @@
 
 intf_libs = # Interface dependencies.
 impl_libs = # Implementation dependencies.
-#import xxxx_libs += libhello%lib{hello}
+
+# The public headers include libdeflate's headers, whose types (progress
+# and, for the compressor, compression_level) are part of our interface.
+#
+import intf_libs += libdeflate%lib{deflate}
 
 lib{gzip}: {hxx ixx txx cxx}{** -version} hxx{version} $impl_libs $intf_libs
 
