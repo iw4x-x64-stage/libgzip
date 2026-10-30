@@ -123,12 +123,13 @@ namespace gzip
   void ostreambuf::
   open (std::ostream& os, compression_level l, const gzip::header& h)
   {
+    LIBGZIP_PRE (!is_open ());
     LIBGZIP_PRE ((os.exceptions () & (std::ostream::badbit |
                                       std::ostream::failbit)) ==
                  (std::ostream::badbit | std::ostream::failbit));
 
-    // Construct the compressor first, since it verifies the header, and
-    // leave the buffer as it is if it doesn't pass.
+    // Construct the compressor first, since it verifies the header, so
+    // that the buffer stays closed if the header doesn't pass.
     //
     c_.emplace (l, h);
 

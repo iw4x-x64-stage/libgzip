@@ -39,6 +39,12 @@ w = $~
   $* -c 9 <<<$w/64kb | $* -d >>>$w/64kb : smallest
 }}
 
+: reopen
+: Open stream, which cannot be opened again and stays as it is
+:
+$* -c 6 --name a.txt --reopen <:'hello' 2>'precondition: !is_open ()' | \
+  $* -d --names >:'[a.txt]hello'
+
 : members
 : Decompress the data of several members
 :

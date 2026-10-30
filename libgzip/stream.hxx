@@ -142,9 +142,11 @@ namespace gzip
   {
   public:
     // Start compressing into the stream at the level, which must be in the
-    // range from 0 to 9, with the header. The stream must have the badbit
-    // and failbit exceptions enabled. Throw std::invalid_argument if the
-    // header is invalid (see compressor for details).
+    // range from 0 to 9, with the header. The buffer must not be open, since
+    // that would leave the compressed data it is writing incomplete, and the
+    // stream must have the badbit and failbit exceptions enabled. Throw
+    // std::invalid_argument if the header is invalid (see compressor for
+    // details).
     //
     void
     open (std::ostream&, compression_level, const gzip::header&);

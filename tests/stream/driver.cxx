@@ -18,6 +18,7 @@
 #include <libgzip/types.hxx>
 #include <libgzip/header.hxx>
 #include <libgzip/stream.hxx>
+#include <libgzip/contract.hxx>
 #include <libgzip/compressor.hxx>
 #include <libgzip/decompressor.hxx>
 
@@ -27,12 +28,27 @@
 using namespace std;
 using namespace gzip;
 
-// Usage: argv[0] -c <level> [--name <file-name>]
+namespace
+{
+  [[noreturn]] void
+  throwing_handler (const contract_violation& v)
+  {
+    throw v;
+  }
+}
+
+// Usage: argv[0] -c <level> [--name <file-name>] [--reopen]
 //        argv[0] -d [--limit <n>] [--names]
 //
 // -c  compress stdin at the level by writing it a character at a time to a
 //     gzip::ostream over stdout, with the file name in the header if
 //     specified
+//
+// --reopen
+//
+//     open the gzip::ostream again before writing to it, with a contract
+//     handler that throws, and write the violation that the handler
+//     receives to stderr as '<kind>: <expression>'
 //
 // -d  decompress stdin by reading it a character at a time from a
 //     gzip::istream over stdin, with the limit of the file name and file
@@ -62,16 +78,47 @@ main (int argc, char* argv[])
 
   if (m == "-c")
   {
-    assert (argc == 3 || (argc == 5 && argv[3] == string_view ("--name")));
+    assert (argc >= 3);
 
     const compression_level l (
       static_cast<compression_level> (stoul (argv[2])));
 
     header h;
-    if (argc == 5)
-      h.name = argv[4];
+    bool reopen (false);
+
+    for (int i (3); i != argc; ++i)
+    {
+      const string_view a (argv[i]);
+
+      if (a == "--reopen")
+        reopen = true;
+      else if (a == "--name")
+      {
+        assert (i + 1 != argc);
+        h.name = argv[++i];
+      }
+      else
+        assert (false);
+    }
 
     gzip::ostream os (cout, l, h);
+
+    if (reopen)
+    {
+      set_contract_handler (&throwing_handler);
+
+      try
+      {
+        os.open (cout, l, h);
+        assert (false);
+      }
+      catch (const contract_violation& v)
+      {
+        println (cerr, "{}: {}", contract_kind_name (v.kind), v.expression);
+      }
+
+      set_contract_handler (nullptr);
+    }
 
     for (char c; cin.get (c); )
       os.put (c);
