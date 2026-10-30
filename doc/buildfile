@@ -1,0 +1,10 @@
+# Copyright (c) the IW4x authors (see the AUTHORS file).
+# SPDX-License-Identifier: GPL-3.0-only WITH AdditionRef-IW4x-Exception-1.1
+
+define css: file
+css{*}: extension = css
+
+# The documentation sources. Note that file{} targets (and the css{} targets
+# derived from it) are distributed but not installed.
+#
+./: style/{css{*} file{LICENSE}}
