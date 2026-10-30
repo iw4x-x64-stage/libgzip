@@ -1,0 +1,80 @@
+# Copyright (c) the IW4x authors (see the AUTHORS file).
+# SPDX-License-Identifier: GPL-3.0-only WITH AdditionRef-IW4x-Exception-1.1
+
++touch zero
++cat <<EOI >=1kb
+A gzip file is a series of members, each of which holds the deflate data of
+some original data between a header and a trailer. The header starts with
+two identification bytes and the compression method, followed by the flags
+that say which of the optional fields are present, the modification time of
+the original data, the extra flags of the compression method, and the
+operating system on which the compression took place. The optional fields
+are an extra field of subfields, the original file name, a file comment, and
+a CRC16 of the header itself. The trailer holds the CRC-32 of the original
+data and its size modulo 2^32, which the decompressor verifies once it has
+reached the end of the deflate data. The members of a file simply follow one
+another, with nothing before, between, or after them, and the data of the
+file is the data of all of its members, one after another. A decompressor
+must check the identification bytes and the compression method, skip the
+optional fields, and reject a member whose reserved flag bits are set, since
+they may announce a field it doesn't know how to skip over.
+EOI
++cat 1kb 1kb 1kb 1kb 1kb 1kb 1kb 1kb >=8kb
++cat 8kb 8kb 8kb 8kb 8kb 8kb 8kb 8kb >=64kb
++$* -c 6 --name a.txt <:'hello' >=hello
++$* -c 6 --name b.txt <:'world' >=world
++$* -c 6 <:'' >=void
++cat hello world >=hello-world
+
+w = $~
+
+: round-trip
+: Compress into a stream and decompress from a stream
+:
+{{
+  $* -c 6 <<<$w/zero | $* -d >>>$w/zero : zero
+  $* -c 6 <<<$w/1kb  | $* -d >>>$w/1kb  : 1kb
+  $* -c 6 <<<$w/64kb | $* -d >>>$w/64kb : 64kb
+  $* -c 0 <<<$w/64kb | $* -d >>>$w/64kb : store
+  $* -c 9 <<<$w/64kb | $* -d >>>$w/64kb : smallest
+}}
+
+: members
+: Decompress the data of several members
+:
+$* -d <<<$w/hello-world >:'helloworld'
+
+: names
+: Associate each character with the header of its member
+:
+{{
+  : two
+  :
+  $* -d --names <<<$w/hello-world >:'[a.txt]hello[b.txt]world'
+
+  : empty
+  : Empty member, which no character comes from, between two others
+  :
+  cat $w/hello $w/void $w/world | $* -d --names >:'[a.txt]hello[b.txt]world'
+}}
+
+: limit
+: File name longer than the limit
+:
+$* -d --limit 4 <<<$w/hello 2>>EOE != 0
+error: file name longer than 4 bytes
+EOE
+
+: junk
+: Data followed by something other than a member
+:
+cat $w/hello - <:'junk' | $* -d 2>>EOE != 0
+error: expected identification byte 0x1f instead of 0x6a
+EOE
+
+: empty
+: Stream without data
+:
+$* -d <<<$w/zero 2>>EOE != 0
+error: empty gzip data
+EOE
