@@ -110,7 +110,7 @@ fetching git:github.com/iw4x-x64-stage/libdeflate#main (prerequisite
     of git:github.com/iw4x-x64-stage/libgzip#main)
 ...
 synchronizing:
-  new libdeflate/0.1.0-a.0.20261029235224.fab77466e02b (required
+  new libdeflate/0.1.0-a.0.20261030143202.5f30790e967b (required
     by libgzip)
   new libgzip/0.1.0-a.0... (required by gz)
   new gz/0.1.0-a.0.19700101000000
@@ -185,13 +185,13 @@ $ gz/gz -d <numbers.txt.gz | cmp - numbers.txt
 
 $ wc -c numbers.txt numbers.txt.gz
 588895 numbers.txt
-212863 numbers.txt.gz
-801758 total
+171537 numbers.txt.gz
+760432 total
 \
 
 The decompressed data is the same as the original (\c{cmp} prints nothing)
-and the compressed data takes a little over a third of its size. Of its
-212863 bytes, 18 are the header and the trailer of the one member that
+and the compressed data takes a little under a third of its size. Of its
+171537 bytes, 18 are the header and the trailer of the one member that
 \c{compress()} writes and the rest is the deflate data. Since our data is in
 the gzip format, the \c{gzip} utility can decompress it as well, and our
 program can decompress what \c{gzip} compresses:
@@ -335,7 +335,7 @@ $ gz/gz <numbers.txt >numbers.txt.gz
 $ gz/gz -d <numbers.txt.gz | cmp - numbers.txt
 
 $ wc -c numbers.txt.gz
-212863 numbers.txt.gz
+171537 numbers.txt.gz
 
 $ (cat numbers.txt.gz; echo junk) | gz/gz -d >/dev/null
 error: expected identification byte 0x1f instead of 0x6a
@@ -483,7 +483,7 @@ numbers.txt 2026-10-30 02:31:41
 
 $ gzip -lN named.gz
          compressed        uncompressed  ratio uncompressed_name
-             212875              588895  63.9% numbers.txt
+             171549              588895  70.9% numbers.txt
 \
 
 As you can see, \c{gzip} finds the name that we recorded. The member is 12
