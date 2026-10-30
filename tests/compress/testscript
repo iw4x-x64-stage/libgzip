@@ -1,0 +1,203 @@
+# Copyright (c) the IW4x authors (see the AUTHORS file).
+# SPDX-License-Identifier: GPL-3.0-only WITH AdditionRef-IW4x-Exception-1.1
+
+# Text whose 1kb paragraph repeats in the larger files, which therefore
+# compress well.
+#
++touch zero
++cat <<EOI >=1kb
+A gzip file is a series of members, each of which holds the deflate data of
+some original data between a header and a trailer. The header starts with
+two identification bytes and the compression method, followed by the flags
+that say which of the optional fields are present, the modification time of
+the original data, the extra flags of the compression method, and the
+operating system on which the compression took place. The optional fields
+are an extra field of subfields, the original file name, a file comment, and
+a CRC16 of the header itself. The trailer holds the CRC-32 of the original
+data and its size modulo 2^32, which the decompressor verifies once it has
+reached the end of the deflate data. The members of a file simply follow one
+another, with nothing before, between, or after them, and the data of the
+file is the data of all of its members, one after another. A decompressor
+must check the identification bytes and the compression method, skip the
+optional fields, and reject a member whose reserved flag bits are set, since
+they may announce a field it doesn't know how to skip over.
+EOI
++cat  1kb  1kb  1kb  1kb  1kb  1kb  1kb  1kb >=8kb
++cat  8kb  8kb  8kb  8kb  8kb  8kb  8kb  8kb >=64kb
+
+w = $~
+
+# Level 0 stores the data as it is, so the whole member is known. The
+# header without any options is:
+#
+# 1f8b 08 00 00000000 04 ff
+#
+# That is, no flags, no time stamp, the extra flags of the fastest
+# algorithm, and the unknown operating system.
+
+: member
+: Compress data into a whole member
+:
+{{
+  : text
+  : Member of 'hello' in a final stored block, with its CRC-32 and size
+  :
+  $* -c 0 <:'hello' | $* -x >>EOO
+  1f8b08000000000004ff010500faff68656c6c6f86a6103605000000
+  EOO
+
+  : empty
+  :
+  $* -c 0 <:'' | $* -x >>EOO
+  1f8b08000000000004ff010000ffff0000000000000000
+  EOO
+}}
+
+: flags
+: Set the extra flags from the level
+:
+{{
+  $* -c 0 <:'' | $* -x 10 >'1f8b08000000000004ff' : 0
+  $* -c 1 <:'' | $* -x 10 >'1f8b08000000000004ff' : 1
+  $* -c 2 <:'' | $* -x 10 >'1f8b08000000000000ff' : 2
+  $* -c 8 <:'' | $* -x 10 >'1f8b08000000000000ff' : 8
+  $* -c 9 <:'' | $* -x 10 >'1f8b08000000000002ff' : 9
+
+  : ignored
+  : Extra flags of the header, which the level overrides
+  :
+  $* -c 6 --flags 2 <:'' | $* -x 10 >'1f8b08000000000000ff'
+}}
+
+: header
+: Write the values and optional fields of the header
+:
+{{
+  : text
+  :
+  $* -c 6 --text <:'' | $* -x 10 >'1f8b08010000000000ff'
+
+  : mtime
+  :
+  $* -c 6 --mtime 1700000000 <:'' | $* -x 10 >'1f8b080000f1536500ff'
+
+  : os
+  :
+  $* -c 6 --os 3 <:'' | $* -x 10 >'1f8b0800000000000003'
+
+  : extra
+  : Extra field with subfields 'AP' and 'xy'
+  :
+  $* -c 6 --extra '4150:0102,7879:' <:'' | $* -x 22 >>EOO
+  1f8b08040000000000ff0a0041500200010278790000
+  EOO
+
+  : extra-empty
+  : Extra field without subfields
+  :
+  $* -c 6 --extra '' <:'' | $* -x 12 >'1f8b08040000000000ff0000'
+
+  : name
+  :
+  $* -c 6 --name 612e747874 <:'' | $* -x 16 >'1f8b08080000000000ff612e74787400'
+
+  : name-empty
+  : File name with nothing but the terminating zero byte
+  :
+  $* -c 6 --name '' <:'' | $* -x 11 >'1f8b08080000000000ff00'
+
+  : comment
+  : File comment of two lines
+  :
+  $* -c 6 --comment 6c696e65310a6c696e6532 <:'' | $* -x 22 >>EOO
+  1f8b08100000000000ff6c696e65310a6c696e653200
+  EOO
+
+  : crc16
+  :
+  $* -c 6 --crc16 <:'' | $* -x 12 >'1f8b08020000000000ff90c9'
+
+  : all
+  : All of the optional fields, in the order of the header
+  :
+  $* -c 6 --extra '4150:0102' --name 68656c6c6f2e747874 \
+     --comment 6772656574696e67 --crc16 <:'' | $* -x 39 >>EOO
+  1f8b081e0000000000ff060041500200010268656c6c6f2e747874006772656574696e670051e4
+  EOO
+
+  : extra-max
+  : Extra field of the largest size
+  :
+  $* -c 6 --pad 65531 <:'hello' | $* -d >:'hello'
+}}
+
+: invalid
+: Test headers that the format doesn't allow
+:
+{{
+  : name
+  : File name with a zero byte
+  :
+  $* -c 6 --name 6100 <:'' 2>>EOE != 0
+  error: file name contains zero byte
+  EOE
+
+  : comment
+  : File comment with a zero byte
+  :
+  $* -c 6 --comment 0061 <:'' 2>>EOE != 0
+  error: file comment contains zero byte
+  EOE
+
+  : subfield-id
+  : Subfield with a reserved ID
+  :
+  $* -c 6 --extra '4100:' <:'' 2>>EOE != 0
+  error: extra subfield with reserved ID
+  EOE
+
+  : extra-long
+  : Extra field longer than the format allows
+  :
+  $* -c 6 --pad 65532 <:'' 2>>EOE != 0
+  error: extra field longer than 65535 bytes
+  EOE
+}}
+
+: round-trip
+: Compress data and decompress the result
+:
+{{
+  $* -c 6 <<<$w/zero | $* -d >>>$w/zero : zero
+  $* -c 6 <<<$w/1kb  | $* -d >>>$w/1kb  : 1kb
+  $* -c 6 <<<$w/64kb | $* -d >>>$w/64kb : 64kb
+  $* -c 0 <<<$w/64kb | $* -d >>>$w/64kb : store
+  $* -c 9 <<<$w/64kb | $* -d >>>$w/64kb : smallest
+
+  : header
+  : Data with all of the optional fields of the header
+  :
+  $* -c 6 --extra '4150:0102' --name 68656c6c6f2e747874 \
+     --comment 6772656574696e67 --crc16 <<<$w/8kb | $* -d >>>$w/8kb
+}}
+
+: chunk
+: Compress in parts, which gives the same data as in one go
+:
+{{
+  : byte
+  :
+  $* -c 6 --name 612e747874 --crc16 <<<$w/8kb >=whole;
+  $* -c 6 --name 612e747874 --crc16 --chunk 1 <<<$w/8kb >>>whole
+
+  : text
+  :
+  $* -c 9 <<<$w/64kb >=whole;
+  $* -c 9 --chunk 7 <<<$w/64kb >>>whole
+}}
+
+: reset
+: Compress again after a reset, which gives the same data
+:
+$* -c 6 --name 612e747874 <<<$w/8kb >=whole;
+$* -c 6 --name 612e747874 --reset <<<$w/8kb >>>whole

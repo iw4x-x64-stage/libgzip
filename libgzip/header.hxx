@@ -69,6 +69,9 @@ namespace gzip
   // in lower case), and the comment separates lines with a single line feed
   // character.
   //
+  // Note that the compressor sets the extra flags from the compression
+  // level and so ignores the flags of the header it is given.
+  //
   struct header
   {
     bool             text  = false; // Data is probably ASCII text.
