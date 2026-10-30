@@ -1,0 +1,43 @@
+intf_libs = # Interface dependencies.
+impl_libs = # Implementation dependencies.
+#import xxxx_libs += libhello%lib{hello}
+
+lib{gzip}: {hxx ixx txx cxx}{** -version} hxx{version} $impl_libs $intf_libs
+
+hxx{version}: in{version} $src_root/manifest
+
+# Build options.
+#
+cxx.poptions =+ "-I$out_root" "-I$src_root"
+
+obja{*}: cxx.poptions += -DLIBGZIP_STATIC_BUILD
+objs{*}: cxx.poptions += -DLIBGZIP_SHARED_BUILD
+
+# Export options.
+#
+lib{gzip}:
+{
+  cxx.export.poptions = "-I$out_root" "-I$src_root"
+  cxx.export.libs = $intf_libs
+}
+
+liba{gzip}: cxx.export.poptions += -DLIBGZIP_STATIC
+libs{gzip}: cxx.export.poptions += -DLIBGZIP_SHARED
+
+# For pre-releases use the complete version to make sure they cannot
+# be used in place of another pre-release or the final version. See
+# the version module for details on the version.* variable values.
+#
+if $version.pre_release
+  lib{gzip}: bin.lib.version = "-$version.project_id"
+else
+  lib{gzip}: bin.lib.version = "-$version.major.$version.minor"
+
+# Install into the libgzip/ subdirectory of, say, /usr/include/
+# recreating subdirectories.
+#
+{hxx ixx txx}{*}:
+{
+  install         = include/libgzip/
+  install.subdirs = true
+}

@@ -1,0 +1,6 @@
+$out_root/
+{
+  include libgzip/
+}
+
+export $out_root/libgzip/$import.target

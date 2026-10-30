@@ -1,0 +1,3 @@
+import libs = libgzip%lib{gzip}
+
+exe{driver}: {hxx ixx txx cxx}{**} $libs testscript{**}
