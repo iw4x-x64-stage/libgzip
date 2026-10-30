@@ -17,4 +17,7 @@ build-error-email: wroy@proton.me
 depends: * build2 >= 0.18.0
 depends: * bpkg >= 0.18.0
 depends: libdeflate ^0.1.0-a.0.1
+# Uncomment to regenerate the manual (see doc/buildfile for details).
+#
+#depends: * cli ^1.2.0- ? ($config.libgzip.develop)
 builds: default

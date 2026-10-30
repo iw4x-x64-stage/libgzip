@@ -1,0 +1,870 @@
+// Copyright (c) the IW4x authors (see the AUTHORS file).
+// SPDX-License-Identifier: GPL-3.0-only WITH AdditionRef-IW4x-Exception-1.1
+
+"\name=libgzip-manual"
+"\title=Manual"
+
+// NOTES
+//
+// - Maximum <pre> line is 70 characters.
+//
+
+"
+\h0#preface|Preface|
+
+This document describes \c{libgzip}, a C++ library for compressing and
+decompressing data in the gzip file format. For the details of the library
+interface refer to the comments in its public headers. For the format itself
+see \l{https://www.rfc-editor.org/info/rfc1952 RFC 1952}.
+
+
+\h1#intro|Introduction|
+
+The \c{libgzip} library is a C++ implementation of the gzip file format as
+specified by RFC 1952. A gzip file is a series of members, each of which holds
+deflate data (RFC 1951) between a header and a trailer. The header describes
+the original data, for example, with its file name and modification time, and
+the trailer holds the CRC-32 and the size of the original data, which the
+decompressor verifies. The deflate data itself is compressed and decompressed
+by the \l{https://iw4x.io/projects/libdeflate/doc/ libdeflate} library, and
+\c{libgzip} provides the same interfaces on top of it: an incremental
+compressor and decompressor, functions that work on the whole data at once,
+and \c{iostream} adapters.
+
+The decompressor accepts every file that the format defines and rejects
+everything else, including a few files that other decompressors let through
+(see \l{#conformance Conformance} for details).
+
+We begin with a tutorial introduction that builds a small compression utility,
+once with each of the library's interfaces, and along the way gives the
+compressed data a header that names the original file. The remaining chapters
+then cover the details that the tutorial passes over.
+
+
+\h#intro-setup|Project Setup|
+
+Our utility is called \c{gz}. It compresses its standard input to its
+standard output and, with the \c{-d} option, decompresses instead. Let's start
+by creating a new executable project for it (here we assume our current
+working directory is \c{/tmp}):
+
+\
+$ bdep new -l c++ -t exe gz
+created new executable project gz in /tmp/gz/
+
+$ cd gz
+\
+
+To use \c{libgzip} in our project, we first edit the
+\c{repositories.manifest} file found in the root directory of the project and
+add the \c{libgzip} repository as a prerequisite:
+
+\
+role: prerequisite
+location: https://github.com/iw4x-x64-stage/libgzip.git#main
+\
+
+Next, we edit the \c{manifest} file (again, found in the root of our project)
+and specify the dependency on \c{libgzip}:
+
+\
+depends: libgzip ^0.1.0-a.0.1
+\
+
+\N|The \c{-a.0.1} part of the constraint lets it match the snapshots of
+\c{libgzip} that precede its \c{0.1.0} release, which are the only versions
+available until then. Once \c{0.1.0} is released, the constraint becomes
+\c{^0.1.0}.|
+
+Finally, we import the library in \c{gz/buildfile}. We won't be writing
+tests in this tutorial, so we also remove \c{testscript} that came with the
+project, here and in the \c{gz/} directory:
+
+\
+$ cat gz/buildfile
+
+libs =
+import libs += libgzip%lib{gzip}
+
+exe{gz}: {hxx ixx txx cxx}{**} $libs
+
+cxx.poptions =+ \"-I$out_root\" \"-I$src_root\"
+\
+
+\N|If these files are new to you, see
+\l{https://build2.org/build2-toolchain/doc/build2-toolchain-intro.xhtml#guide-add-remove-deps
+Adding and Removing Dependencies} in the \c{build2} toolchain introduction for
+the details on each of them.|
+
+With the dependency in place, let's initialize our project in a build
+configuration:
+
+\
+$ bdep init -C @gcc cc config.cxx=g++
+initializing in project /tmp/gz/
+created configuration @gcc /tmp/gz-gcc/ 1 target
+    default,forwarded,auto-synchronized
+fetching git:github.com/iw4x-x64-stage/libgzip#main (prerequisite
+    of dir:/tmp/gz)
+fetching git:github.com/iw4x-x64-stage/libdeflate#main (prerequisite
+    of git:github.com/iw4x-x64-stage/libgzip#main)
+...
+synchronizing:
+  new libdeflate/0.1.0-a.0.20261029235224.fab77466e02b (required
+    by libgzip)
+  new libgzip/0.1.0-a.0... (required by gz)
+  new gz/0.1.0-a.0.19700101000000
+\
+
+As you can see, \c{bdep} fetched the \c{libgzip} repository together with the
+\c{libdeflate} repository, which \c{libgzip}'s repository lists as its own
+prerequisite, and configured both libraries in our build configuration along
+with \c{gz}. We are now ready to write some code.
+
+
+\h#intro-whole|Whole Data|
+
+The simplest way to use \c{libgzip} is to give it the whole data at once.
+Here is the first version of \c{gz}, which works this way:
+
+\
+$ cat gz/gz.cxx
+
+#include <print>
+#include <string>
+#include <iostream>
+#include <iterator>
+#include <string_view>
+
+#include <libgzip/compressor.hxx>
+#include <libgzip/decompressor.hxx>
+
+using namespace std;
+
+int
+main (int argc, char* argv[])
+{
+  const bool d (argc > 1 && argv[1] == string_view (\"-d\"));
+
+  const string in (istreambuf_iterator<char> (cin), {});
+
+  try
+  {
+    print (\"{}\", d ? gzip::decompress (in) : gzip::compress (in));
+  }
+  catch (const gzip::invalid_data& e)
+  {
+    println (cerr, \"error: {}\", e.what ());
+    return 1;
+  }
+}
+\
+
+The \c{gzip::compress()} function is declared in
+\c{<libgzip/compressor.hxx>} and \c{gzip::decompress()} in
+\c{<libgzip/decompressor.hxx>}. Both take the data as \c{std::string_view}
+and return the result as \c{std::string}. Everything in the library is in
+the \c{gzip} namespace.
+
+Let's build our program and try it on a list of numbers:
+
+\
+$ b
+c++ gz/cxx{gz} -> ../gz-gcc/gz/gz/obje{gz}
+c++ ../gz-gcc/libgzip-.../libgzip/cxx{decompressor} -> ...
+...
+ld ../gz-gcc/libdeflate-.../libdeflate/libs{deflate}
+ld ../gz-gcc/libgzip-.../libgzip/libs{gzip}
+ld ../gz-gcc/gz/gz/exe{gz}
+ln ../gz-gcc/gz/gz/exe{gz} -> gz/
+
+$ seq 1 100000 >numbers.txt
+
+$ gz/gz <numbers.txt >numbers.txt.gz
+$ gz/gz -d <numbers.txt.gz | cmp - numbers.txt
+
+$ wc -c numbers.txt numbers.txt.gz
+588895 numbers.txt
+212863 numbers.txt.gz
+801758 total
+\
+
+The decompressed data is the same as the original (\c{cmp} prints nothing)
+and the compressed data takes a little over a third of its size. Of its
+212863 bytes, 18 are the header and the trailer of the one member that
+\c{compress()} writes and the rest is the deflate data. Since our data is in
+the gzip format, the \c{gzip} utility can decompress it as well, and our
+program can decompress what \c{gzip} compresses:
+
+\
+$ gzip -dc numbers.txt.gz | cmp - numbers.txt
+$ gzip -c numbers.txt | gz/gz -d | cmp - numbers.txt
+\
+
+\N|Note that we gave our data file the \c{.txt} extension. The root
+directory of our project is in the header search paths (that
+\c{cxx.poptions} line in \c{gz/buildfile}), and a file called \c{numbers}
+there would take the place of the standard \c{<numbers>} header that other
+standard headers include.|
+
+Let's now see what happens if we try to decompress something that is not
+gzip data, such as our list of numbers:
+
+\
+$ gz/gz -d <numbers.txt
+error: expected identification byte 0x1f instead of 0x31
+\
+
+When \c{decompress()} encounters a fault in the data, it throws
+\c{gzip::invalid_data} with the description of the fault as the message.
+Every member starts with the two identification bytes \c{0x1f} and
+\c{0x8b}, and our file starts with the digit \c{1}, which is \c{0x31}. The
+decompressor checks each byte of the header as soon as it gets to it, so it
+reports this fault at the first byte.
+
+The \c{invalid_data} exception is derived from \c{std::invalid_argument}.
+The faults that \c{decompress()} reports with it include those that
+\c{libdeflate} finds in the deflate data of a member, and it also throws it
+if the data ends before its last member does. For example:
+
+\
+$ head -c 1000 numbers.txt.gz | gz/gz -d
+error: incomplete deflate data
+\
+
+The data of a gzip file is the data of all of its members, one after another.
+So if we concatenate two files, we get a file with two members, which
+decompresses into the data of both:
+
+\
+$ cat numbers.txt.gz numbers.txt.gz | gz/gz -d | wc -c
+1177790
+\
+
+\N|Compression accepts any data and therefore never throws
+\c{invalid_data}. It may throw \c{std::invalid_argument} for an invalid
+header, which we will get to in \l{#intro-names File Names}.|
+
+This version of \c{gz} works but it keeps both the input and the output in
+memory, which limits the size of the data it can handle. Let's fix that with
+streams.
+
+
+\h#intro-streams|Streams|
+
+The \c{<libgzip/stream.hxx>} header provides two stream classes:
+\c{gzip::ostream} compresses what we write to it into another output stream
+and \c{gzip::istream} decompresses what it reads from another input stream.
+Here is the second version of our program:
+
+\
+$ cat gz/gz.cxx
+
+#include <print>
+#include <iostream>
+#include <string_view>
+
+#include <libgzip/stream.hxx>
+
+using namespace std;
+
+int
+main (int argc, char* argv[])
+{
+  const bool d (argc > 1 && argv[1] == string_view (\"-d\"));
+
+  cin.exceptions (ios::badbit);
+  cout.exceptions (ios::badbit | ios::failbit);
+
+  try
+  {
+    if (d)
+    {
+      gzip::istream is (cin);
+
+      if (is.peek () != istream::traits_type::eof ())
+        cout << is.rdbuf ();
+    }
+    else
+    {
+      gzip::ostream os (cout);
+
+      if (cin.peek () != istream::traits_type::eof ())
+        os << cin.rdbuf ();
+
+      os.close ();
+    }
+  }
+  catch (const gzip::invalid_data& e)
+  {
+    println (cerr, \"error: {}\", e.what ());
+    return 1;
+  }
+}
+\
+
+Let's start with the compressing side. The \c{gzip::ostream} constructor
+takes the stream to write the compressed data to and, optionally, the
+compression level and the header. The compressed data is complete only after
+\c{close()} writes the rest of the deflate data and the trailer, so we call
+it explicitly (see \l{#contracts Programming Errors} for what happens if we
+forget). The errors of writing to \c{cout} come through \c{gzip::ostream} as
+exceptions, which is why it requires the other stream to have the
+\c{badbit} and \c{failbit} exceptions enabled.
+
+On the decompressing side, the gzip data must end the other stream, so
+anything after the last member is an error. The \c{invalid_data} exception
+comes through \c{gzip::istream} the same as from \c{decompress()}, which
+is why \c{gzip::istream} requires the \c{badbit} exception, which it
+enables by default.
+
+We only insert the stream buffers if they have something to insert. If the
+stream buffer that we insert with \c{operator<<} has no characters, the
+insertion sets \c{failbit} on the stream that we insert into, and both
+\c{cout} and \c{gzip::ostream} have the \c{failbit} exception enabled.
+
+Let's build and try it:
+
+\
+$ b
+c++ gz/cxx{gz} -> ../gz-gcc/gz/gz/obje{gz}
+ld ../gz-gcc/gz/gz/exe{gz}
+ln ../gz-gcc/gz/gz/exe{gz} -> gz/
+
+$ gz/gz <numbers.txt >numbers.txt.gz
+$ gz/gz -d <numbers.txt.gz | cmp - numbers.txt
+
+$ wc -c numbers.txt.gz
+212863 numbers.txt.gz
+
+$ (cat numbers.txt.gz; echo junk) | gz/gz -d >/dev/null
+error: expected identification byte 0x1f instead of 0x6a
+\
+
+As you can see, after the end of the first member the decompressor expects
+another member and finds the letter \c{j} instead. Empty data compresses into
+a member as well:
+
+\
+$ gz/gz </dev/null | od -An -tx1
+ 1f 8b 08 00 00 00 00 00 00 ff 03 00 00 00 00 00
+ 00 00 00 00
+
+$ gz/gz </dev/null | gz/gz -d | wc -c
+0
+\
+
+The first ten bytes are the header: the identification bytes, the
+compression method (8, deflate), the flags, the modification time, the extra
+flags, and the operating system (255, unknown). Then come the two bytes of
+the deflate data, which is a single block that contains nothing but its end,
+and the trailer with the CRC-32 and the size of the empty data, both zero.
+
+Now our \c{gz} can handle data of any size. Both streams keep a buffer on
+each side and the compressor keeps a window of the data it searches for
+matches, and that is all the memory they need. Let's compress 100MB of
+zeros and see how much memory it takes:
+
+\
+$ head -c 100000000 /dev/zero | \\
+  /usr/bin/time -f '%M KB' gz/gz | wc -c
+5392 KB
+97217
+\
+
+Notice that the 5MB that our program takes includes the C++ runtime and the
+two libraries themselves. With ten times as much data we see about the same
+figure.
+
+\N|On Windows the standard streams are opened in the text mode, which
+translates line endings and so corrupts binary data. A real \c{gz} would
+switch \c{stdin} and \c{stdout} to the binary mode with \c{_setmode()}
+first.|
+
+
+\h#intro-names|File Names|
+
+So far our members have the default header, which says nothing about the
+original data. The \c{gzip} utility records the name of the original file
+and its modification time, and we can do the same with \c{gzip::header},
+declared in \c{<libgzip/header.hxx>}. Let's extend the streams version of
+\c{gz} with the \c{-n} option, which records the file name that follows it
+and the current time, and with the \c{-l} option, which prints the file name
+and the modification time of the first member instead of the data:
+
+\
+$ cat gz/gz.cxx
+
+#include <ctime>
+#include <print>
+#include <chrono>
+#include <cstdint>
+#include <iostream>
+#include <string_view>
+
+#include <libgzip/stream.hxx>
+
+using namespace std;
+
+int
+main (int argc, char* argv[])
+{
+  const string_view m (argc > 1 ? argv[1] : \"\");
+
+  cin.exceptions (ios::badbit);
+  cout.exceptions (ios::badbit | ios::failbit);
+
+  try
+  {
+    if (m == \"-d\" || m == \"-l\")
+    {
+      gzip::istream is (cin);
+
+      const bool empty (is.peek () == istream::traits_type::eof ());
+
+      if (m == \"-l\")
+      {
+        const gzip::header& h (*is.header ());
+        const chrono::sys_seconds t (chrono::seconds (h.mtime));
+
+        println (\"{} {:%F %T}\", h.name.value_or (\"-\"), t);
+      }
+      else if (!empty)
+        cout << is.rdbuf ();
+    }
+    else
+    {
+      gzip::header h;
+      h.mtime = static_cast<uint32_t> (time (nullptr));
+
+      if (m == \"-n\" && argc > 2)
+        h.name = argv[2];
+
+      gzip::ostream os (cout, gzip::compression_level::balanced, h);
+
+      if (cin.peek () != istream::traits_type::eof ())
+        os << cin.rdbuf ();
+
+      os.close ();
+    }
+  }
+  catch (const gzip::invalid_data& e)
+  {
+    println (cerr, \"error: {}\", e.what ());
+    return 1;
+  }
+}
+\
+
+The header is a plain struct whose members are the header values, each with
+a default that makes the default header. The \c{mtime} member is the
+modification time in seconds since the epoch, which the format limits to 32
+bits, and the \c{name} member is a \c{std::optional<std::string>}, since the
+format distinguishes a member without a file name from one with an empty
+name. We pass the header to the \c{gzip::ostream} constructor after the
+level, which we spell out here with its default value.
+
+On the decompressing side, \c{header()} returns the header of the member
+that the characters being read come from. It has a value once the stream has
+read something, which \c{peek()} makes it do. Since the data has at least one
+member, there is a header even if the data is empty.
+
+Let's build our program and record the name of our list of numbers:
+
+\
+$ b
+c++ gz/cxx{gz} -> ../gz-gcc/gz/gz/obje{gz}
+ld ../gz-gcc/gz/gz/exe{gz}
+ln ../gz-gcc/gz/gz/exe{gz} -> gz/
+
+$ gz/gz -n numbers.txt <numbers.txt >named.gz
+$ gz/gz -l <named.gz
+numbers.txt 2026-10-30 02:31:41
+
+$ gzip -lN named.gz
+         compressed        uncompressed  ratio uncompressed_name
+             212875              588895  63.9% numbers.txt
+\
+
+As you can see, \c{gzip} finds the name that we recorded. The member is 12
+bytes larger than before: the file name with its terminating zero byte. Our
+program can also see what \c{gzip} records:
+
+\
+$ touch -d '2026-10-29 12:00:00 UTC' numbers.txt
+
+$ gzip -c numbers.txt | gz/gz -l
+numbers.txt 2026-10-29 12:00:00
+
+$ gzip -nc numbers.txt | gz/gz -l
+- 1970-01-01 00:00:00
+\
+
+With the \c{-n} option \c{gzip} leaves the name and the time out, and the
+header says so with the time stamp 0 and no file name.
+
+The header has more to it than the file name and the time, and the format
+puts a few requirements on its values (see \l{#headers Headers} for details).
+For example, the file name may not contain a zero byte, since a zero byte
+terminates it in the header. A header that doesn't meet them makes the
+compressor throw \c{std::invalid_argument}. Our program has no handler for
+it, since a command line argument cannot contain a zero byte.
+
+
+\h#intro-incremental|Incremental Interface|
+
+Streams are convenient when the data comes from a stream and goes to one.
+When it comes from somewhere else, for example, a network connection or a
+memory-mapped file, we can use the compressor and decompressor directly. Here
+is the last version of our program, which does that:
+
+\
+$ cat gz/gz.cxx
+
+#include <print>
+#include <iostream>
+#include <string_view>
+
+#include <libgzip/compressor.hxx>
+#include <libgzip/decompressor.hxx>
+
+using namespace std;
+
+int
+main (int argc, char* argv[])
+{
+  const bool d (argc > 1 && argv[1] == string_view (\"-d\"));
+
+  cin.exceptions (ios::badbit);
+  cout.exceptions (ios::badbit | ios::failbit);
+
+  auto run = [] (auto& c)
+  {
+    char in[4096];
+    char out[4096];
+
+    while (!c.finished ())
+    {
+      cin.read (in, sizeof (in));
+
+      string_view i (in, static_cast<size_t> (cin.gcount ()));
+      const bool end (cin.eof ());
+
+      for (gzip::progress p {0, sizeof (out)};
+           !c.finished () &&
+           (!i.empty () || p.produced == sizeof (out)); )
+      {
+        p = c.next (i, out, end);
+        i.remove_prefix (p.consumed);
+
+        cout.write (out, static_cast<streamsize> (p.produced));
+      }
+    }
+  };
+
+  try
+  {
+    if (d)
+    {
+      gzip::decompressor x;
+      run (x);
+    }
+    else
+    {
+      gzip::compressor c;
+      run (c);
+    }
+  }
+  catch (const gzip::invalid_data& e)
+  {
+    println (cerr, \"error: {}\", e.what ());
+    return 1;
+  }
+}
+\
+
+Let's unpack the \c{run} lambda. The \c{gzip::compressor} and
+\c{gzip::decompressor} classes have the same interface as their
+\c{libdeflate} counterparts, so one lambda handles both. The work is done by
+the \c{next()} member function, which takes the next part of the input, the
+output buffer, and whether this part is the last one. It returns a
+\c{gzip::progress} value with the number of input bytes it \c{consumed} and
+the number of output bytes it \c{produced}, which we use to advance the input
+and to write the output.
+
+The outer loop reads the input in parts and the inner loop hands each part to
+\c{next()}. Notice that the inner loop keeps calling \c{next()} after the
+input is used up if the previous call filled the output buffer. A few bits of
+deflate data can stand for hundreds of bytes of output, so a full output
+buffer means there may be more output to write for the input that was already
+consumed. The inner loop also keeps calling \c{next()} while there is input
+left, since the decompressor stops at the end of each member.
+
+The \c{end} argument says that the data ends within this part. Our program
+learns that when \c{cin} reaches the end of its input. For the decompressor,
+\c{end} means that the data must end within this part, and if the input runs
+out before its last member does, \c{next()} throws \c{invalid_data}. Until
+then, the end of a member may be followed by another one, so the
+decompressor only finishes once it knows there is no more input. For the
+compressor, \c{end} means that there is no more data to compress, so it can
+finish the deflate data and write the trailer once it has consumed this
+part. Until then the compressor holds on to the data that later input may
+still find matches in, and a call to \c{next()} may consume all of its input
+and produce nothing. Once we pass \c{end} as \c{true}, we must keep passing
+\c{true} in the calls that follow.
+
+Both classes report the end with \c{finished()}, which for the decompressor
+means that it has reached the end of the data and for the compressor that it
+has written all of it.
+
+Let's build our last version and compare its result with the one of the
+first two versions:
+
+\
+$ b
+c++ gz/cxx{gz} -> ../gz-gcc/gz/gz/obje{gz}
+ld ../gz-gcc/gz/gz/exe{gz}
+ln ../gz-gcc/gz/gz/exe{gz} -> gz/
+
+$ gz/gz <numbers.txt | cmp - numbers.txt.gz
+$ gz/gz -d <numbers.txt.gz | cmp - numbers.txt
+\
+
+The compressed data is the same as what the first two versions produced. The
+compressor output depends only on the input, the compression level, and the
+header, so it doesn't matter how we split the input into parts.
+
+Both classes also provide \c{reset()}, which brings an object back to its
+initial state so that we can reuse it for other data. Note also that after
+\c{next()} throws, the decompressor can only be reset, and that the output
+written by the call that throws is not reported.
+
+Since a call to \c{next()} stops at the end of each member, the output of a
+call always comes from a single member. After the call, \c{header()} returns
+the header of that member and \c{members()} the number of members whose
+header has been read so far. A program that needs the header of each member,
+for example, to list them, can watch \c{members()} change from one call to
+the next.
+
+
+
+\h1#headers|Headers|
+
+The header of a member is represented by \c{gzip::header}, a struct with the
+following members:
+
+\
+bool             text  = false;
+uint32_t         mtime = 0;
+extra_flags      flags = extra_flags::none;
+operating_system os    = operating_system::unknown;
+
+optional<vector<subfield>> extra;
+optional<string>           name;
+optional<string>           comment;
+
+bool crc16 = false;
+\
+
+The \c{text} member says that the data is probably ASCII text, which is the
+\c{FTEXT} flag of the format. It is only a hint, which the compressor leaves
+to its caller and the decompressor passes on as it is. The \c{mtime} member
+is the modification time of the original data in seconds since the epoch, or
+0 if the time is unknown.
+
+The extra flags say how the deflate data was compressed. The deflate method
+defines two of them, \c{maximum} for the maximum compression with the
+slowest algorithm and \c{fastest} for the fastest algorithm. The compressor
+sets them from the compression level: \c{maximum} for level 9, \c{fastest}
+for levels 0 and 1, and \c{none} otherwise. It ignores the extra flags of the
+header that it is given, which therefore only matter in the headers that the
+decompressor reads.
+
+The operating system is the type of file system on which the compression
+took place, with the enumerators of \c{operating_system} naming the values
+that the format defines, from \c{fat} (0) to \c{acorn_riscos} (13), and
+\c{unknown} (255). The format calls these values the currently defined ones,
+which leaves the list open, and the decompressor accepts any value. Note that
+the value 3 is called \c{unix_system}, since GCC predefines \c{unix} as a
+macro in its GNU modes.
+
+The \c{extra}, \c{name}, and \c{comment} members are the optional fields of
+the header, each present in the header if it has a value. The extra field is
+a series of subfields, each a two-byte ID and up to 65531 bytes of data. The
+whole field, with four bytes of ID and length for each subfield, may take up
+to 65535 bytes. For example, to give a member the \c{AP} subfield with two
+bytes of data:
+
+\
+gzip::header h;
+h.extra = {gzip::subfield {{'A', 'P'}, \"\\x01\\x02\"}};
+\
+
+The file name and the file comment are in ISO 8859-1 and can contain any
+character but the zero byte, which terminates them in the header. The file
+name is the name of the original file with any directory components removed
+(and, for a file system with case-insensitive names, in lower case), and the
+comment separates lines with a single line feed character. The library
+leaves the choice of the name and the encoding to its caller, and the
+compressor writes the name and comment that it is given.
+
+Finally, the \c{crc16} member says whether the header ends with a CRC16 of
+the bytes that precede it, which is the lower half of their CRC-32. The
+compressor calculates it and the decompressor verifies it.
+
+The compressor verifies the header on construction and throws
+\c{std::invalid_argument} if the file name or file comment contains a zero
+byte, if the extra field is longer than 65535 bytes, or if one of its
+subfields has a reserved ID, which is an ID whose second byte is zero.
+
+The format puts no limit on the size of the file name and the file comment,
+which the decompressor keeps in memory. So that the memory it takes stays
+bounded, it rejects a file name or a file comment longer than its limit,
+which by default is 65535 bytes, the limit of the extra field. A different
+limit can be passed to the \c{decompressor} constructor and to the
+\c{gzip::istream} constructor. For example:
+
+\
+gzip::decompressor d (255);
+
+gzip::istream is (cin, 255);
+\
+
+The CRC-32 of the trailer, from which the header CRC16 is also derived, is
+the CRC of ISO 3309 and ITU-T V.42. The library calculates it with
+\c{gzip::crc32}, declared in \c{<libgzip/crc32.hxx>}, which is also available
+to its users:
+
+\
+gzip::crc32 c;
+c.append (\"1234\");
+c.append (\"56789\");
+
+assert (c.value () == 0xcbf43926);
+\
+
+
+\h1#levels|Compression Levels|
+
+The compression level controls how much time the deflate compressor spends
+looking for matches. It is a value of the \c{gzip::compression_level}
+enumeration in the range from 0 to 9, which is \c{libdeflate}'s
+\c{deflate::compression_level} under the \c{gzip} name, with the following
+enumerators naming the usual levels:
+
+\
+store     0  Stored blocks only, no search for matches.
+fastest   1  Shortest search.
+balanced  6  The default.
+smallest  9  Longest search.
+\
+
+Any other value in the range is a level as well. To compress at a level other
+than the default, we pass it to \c{compress()}, to the \c{compressor}
+constructor, or to the \c{gzip::ostream} constructor, each time before the
+header. For example:
+
+\
+string c (gzip::compress (in, gzip::compression_level::smallest));
+
+gzip::compressor x (static_cast<gzip::compression_level> (4), h);
+
+gzip::ostream os (cout, gzip::compression_level::fastest);
+\
+
+See the \c{libdeflate} manual for the details on the levels and on the
+deflate data that the compressor writes at each of them.
+
+
+\h1#conformance|Conformance|
+
+The decompressor accepts every file that RFC 1952 defines and rejects
+everything else. Specifically, it throws \c{invalid_data} on the first of the
+following faults:
+
+\ul|
+
+\li|Data without members.|
+
+\li|A member that doesn't start with the identification bytes \c{0x1f} and
+\c{0x8b}, which includes anything after the last member.|
+
+\li|A compression method other than deflate (8). The format reserves the
+methods from 0 to 7 and leaves the rest undefined.|
+
+\li|A reserved flag bit set. The format requires the decompressor to reject
+these, since they could indicate a field that it doesn't know how to skip
+over.|
+
+\li|Extra flags other than 0 and the two that the deflate method defines, 2
+and 4.|
+
+\li|An extra field that isn't a series of whole subfields.|
+
+\li|A subfield with a reserved ID, which is one whose second byte is zero.|
+
+\li|A header CRC16 that doesn't match the header.|
+
+\li|A fault in the deflate data of a member, which \c{libdeflate} reports
+(see the \c{libdeflate} manual for the faults it finds).|
+
+\li|A CRC-32 or a size in the trailer that doesn't match the decompressed
+data. The size is that of the data of the member modulo 2^32.|
+
+\li|Data that ends before its last member does.|
+
+|
+
+It also rejects a member whose file name or file comment is longer than its
+limit (see \l{#headers Headers} for details). This is the only fault that it
+finds in data that the format defines.
+
+The decompressor accepts any operating system value, since the format leaves
+the list of values open, and it accepts an empty extra field, an empty file
+name, and a member with empty data, which the format defines. It passes
+the text flag, the file name, and the file comment on as they are.
+
+The compressor only writes data that the decompressor accepts. It writes a
+single member, with the extra flags that its level calls for and the reserved
+flag bits zero, and it rejects the headers that the format doesn't allow
+(see \l{#headers Headers} for details).
+
+
+\h1#contracts|Programming Errors|
+
+Using the library in a way that its documentation rules out is a programming
+error, which the library reports as a contract violation. Recall that in the
+streams version of \c{gz} we call \c{close()} on \c{gzip::ostream}
+explicitly. Let's see what happens if we forget:
+
+\
+$ gz/gz <numbers.txt >/dev/null
+stream.cxx:236: error: precondition violated: !is_open () ||
+    !good () || uncaught_exceptions () != 0
+stream.cxx:236: note: in '~ostream'
+\
+
+A \c{gzip::ostream} that is destroyed while still open would leave the
+compressed data incomplete, so it treats this as a programming error unless
+the stream is no longer good or an exception is being thrown.
+
+By default, a contract violation prints a report like this to \c{stderr} and
+aborts the process. To handle it differently, for example, to throw an
+exception in a test, we can install our own handler with
+\c{gzip::set_contract_handler()}, declared in \c{<libgzip/contract.hxx>}.
+The handler receives a \c{gzip::contract_violation} that describes the failed
+check. If the handler returns, the default report is printed and the process
+is aborted all the same.
+
+Note that \c{libdeflate} checks its own contracts in the same way, with its
+own handler, which \c{deflate::set_contract_handler()} installs.
+
+The amount of checking is selected when building the library with the
+\c{LIBGZIP_CONTRACT} macro: \c{0} omits the checks, \c{1} (the default)
+checks preconditions and assertions, and \c{2} adds postconditions and
+invariants. For example, to run the library's tests at the highest level:
+
+\
+$ b test config.cxx.poptions=-DLIBGZIP_CONTRACT=2
+\
+"
